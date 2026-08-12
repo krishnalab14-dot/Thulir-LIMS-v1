@@ -17,7 +17,7 @@
     "typecheck": "npm run typecheck -w @thulir/api && npm run typecheck -w @thulir/web",
     "lint": "eslint . --max-warnings 0",
     "format": "prettier --write .",
-    "test": "npm run test -w @thulir/api",
+    "test": "npm run test -w @thulir/api && npm run test -w @thulir/web",
     "test:integration": "npm run test:integration -w @thulir/api",
     "verify:real-db": "npm run verify:real-db -w @thulir/api",
     "prisma:generate": "npm run prisma:generate -w @thulir/api",

@@ -192,8 +192,10 @@ export class OrdersService {
    *  - packages bill at their OWN MasterTestPackage.packagePrice, distributed
    *    across the package's constituent OrderTest rows (proportionally to each
    *    test's standalone price) so the snapshot sum equals packagePrice exactly.
-   * A test ordered both standalone and inside a package appears as two line
-   * items — the package is a separately priced unit and is billed as such.
+   * Overlap prevention: a test must never be billed BOTH standalone and inside
+   * a package (that would double-bill it). The frontend resolves this with an
+   * explicit confirm before submitting; if a request still overlaps, it is
+   * rejected here with a BadRequestException rather than silently merged.
    */
   private async resolveOrderItems(
     tx: Prisma.TransactionClient,
@@ -232,6 +234,24 @@ export class OrdersService {
       }
       const priceById = new Map(itemRows.map((r) => [r.id, r.currentPrice]));
       const nameById = new Map(itemRows.map((r) => [r.id, r.testName]));
+
+      // Overlap prevention (reject, never silently merge): a test selected
+      // standalone must not also sit inside a selected package.
+      const conflicts: string[] = [];
+      for (const pkg of packages) {
+        for (const item of pkg.items) {
+          if (uniqueTestIds.includes(item.testId)) {
+            const testName = nameById.get(item.testId) ?? 'Unknown test';
+            conflicts.push(`'${testName}' is ordered both standalone and inside package '${pkg.packageName}'`);
+          }
+        }
+      }
+      if (conflicts.length > 0) {
+        throw new BadRequestException(
+          `Overlapping items cannot be billed twice: ${conflicts.join('; ')}. Remove the standalone item(s) or the package(s).`,
+        );
+      }
+
       for (const pkg of packages) {
         const distributed = distributePackagePrice(pkg.packagePrice, pkg.items.map((i) => ({
           testId: i.testId,

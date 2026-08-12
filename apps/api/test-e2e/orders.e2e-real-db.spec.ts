@@ -31,6 +31,7 @@ describe('Stage 1 real-DB verification', () => {
 
   let testAId: string;
   let testBId: string;
+  let testCId: string;
   let pkgId: string;
 
   const http = () => request(app.getHttpServer());
@@ -80,6 +81,13 @@ describe('Stage 1 real-DB verification', () => {
       .set('x-organization-id', ORG)
       .send({ testCode: 'E2E-BETA', testName: 'E2E Beta Panel', currentPrice: 500 });
     expect(b.status).toBe(201);
+    // A third test NOT in the package — needed to combine a standalone test
+    // with the package without overlapping (overlap is rejected server-side).
+    const c = await http()
+      .post('/api/masters/tests')
+      .set('x-organization-id', ORG)
+      .send({ testCode: 'E2E-GAMMA', testName: 'E2E Gamma Panel', currentPrice: 800 });
+    expect(c.status).toBe(201);
     const pkg = await http()
       .post('/api/masters/packages')
       .set('x-organization-id', ORG)
@@ -89,26 +97,27 @@ describe('Stage 1 real-DB verification', () => {
 
     testAId = a.body.id;
     testBId = b.body.id;
+    testCId = c.body.id;
     pkgId = pkg.body.id;
   });
 
-  it('POST /api/orders bills a package at ITS price + standalone test, with a split payment landing in every table', async () => {
+  it('POST /api/orders bills a package at ITS price + a disjoint standalone test, with a split payment landing in every table', async () => {
     const res = await http()
       .post('/api/orders')
       .set('x-organization-id', ORG)
       .send({
         patient: { firstName: 'Ramesh', lastName: 'Iyer', gender: 'male', mobile: '9000000002', dob: '1985-06-15' },
         orderDetails: { isUrgent: true, clinicalNotes: 'e2e verification' },
-        testIds: [testAId], // standalone 700
+        testIds: [testCId], // standalone 800 (NOT in the package → no overlap)
         packageIds: [pkgId], // own price 900 (standalone sum would be 1200)
         billing: { discountPercent: 10 },
-        payment: { splits: [{ mode: 'cash', amount: 900 }, { mode: 'upi', amount: 540 }] },
+        payment: { splits: [{ mode: 'cash', amount: 900 }, { mode: 'upi', amount: 630 }] },
       });
 
     expect(res.status).toBe(201);
     expect(res.body.status).toBe('billed');
-    expect(res.body.subtotal).toBe('1600'); // 700 + 900 (NOT 700 + 1200)
-    expect(res.body.totalAmount).toBe('1440'); // 10% off
+    expect(res.body.subtotal).toBe('1700'); // 800 + 900 (NOT 800 + 1200)
+    expect(res.body.totalAmount).toBe('1530'); // 10% off
     expect(res.body.orderTests).toHaveLength(3);
     expect(res.body.invoice.status).toBe('paid');
 
@@ -120,27 +129,45 @@ describe('Stage 1 real-DB verification', () => {
     expect(order).not.toBeNull();
     expect(order!.organizationId).toBe(ORG);
     expect(order!.status).toBe('billed');
-    expect(order!.subtotal.toString()).toBe('1600');
-    expect(order!.totalAmount.toString()).toBe('1440');
+    expect(order!.subtotal.toString()).toBe('1700');
+    expect(order!.totalAmount.toString()).toBe('1530');
     expect(order!.createdBy).toBe(SYSTEM_USER_ID);
 
-    // One OrderTest per constituent; package price distributed (525/375), standalone at 700.
+    // One OrderTest per constituent; package price distributed (525/375), standalone at 800.
     const snapshots = order!.orderTests.map((t) => t.snapshottedPrice.toString()).sort();
-    expect(snapshots).toEqual(['375', '525', '700']);
+    expect(snapshots).toEqual(['375', '525', '800']);
     expect(order!.orderTests.map((t) => t.testId)).toContain(testBId); // package's second constituent row exists
     expect(order!.orderTests.every((t) => t.status === 'pending')).toBe(true);
 
     const invoice = order!.invoice!;
     expect(invoice.status).toBe('paid');
-    expect(invoice.subtotal.toString()).toBe('1600');
-    expect(invoice.totalAmount.toString()).toBe('1440');
+    expect(invoice.subtotal.toString()).toBe('1700');
+    expect(invoice.totalAmount.toString()).toBe('1530');
 
     expect(invoice.payments).toHaveLength(1);
     const payment = invoice.payments[0];
     expect(payment.organizationId).toBe(ORG);
     expect(payment.collectedBy).toBe(SYSTEM_USER_ID);
     const splitRows = payment.splits.map((s) => `${s.mode}:${s.amount.toString()}`).sort();
-    expect(splitRows).toEqual(['cash:900', 'upi:540']);
+    expect(splitRows).toEqual(['cash:900', 'upi:630']);
+  });
+
+  it('rejects a test ordered both standalone and inside a package (400, no order rows)', async () => {
+    // testA is standalone AND a constituent of the E2E Bundle → would double-bill.
+    const before = await plain.order.count();
+    const res = await http()
+      .post('/api/orders')
+      .set('x-organization-id', ORG)
+      .send({
+        patient: { firstName: 'Overlap', lastName: 'Case', gender: 'male', mobile: '9000000007', dob: '1978-04-04' },
+        testIds: [testAId],
+        packageIds: [pkgId],
+        billing: {},
+      });
+    expect(res.status).toBe(400);
+    expect(res.body.message).toContain('both standalone and inside package');
+    const after = await plain.order.count();
+    expect(after).toBe(before); // nothing persisted
   });
 
   it('rejects discountPercent 150 server-side (400)', async () => {

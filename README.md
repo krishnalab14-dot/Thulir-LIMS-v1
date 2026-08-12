@@ -79,6 +79,7 @@ Secrets are managed via the Freebuff Keys UI in hosted environments; never commi
 - **Derived rollups** — `Order.status` is computed from `OrderTest` statuses (all new orders start `billed`).
 - **Exact split validation** — payment splits must sum exactly to the amount being paid.
 - **Package pricing** — a package bills at its OWN `packagePrice` (a bundled panel is priced independently of its parts). One `OrderTest` row per constituent test is still created (needed for Stage 2 result entry), with `packagePrice` distributed across those rows proportionally to each test's standalone price, so the snapshot sum always equals `packagePrice`. The order/invoice total never uses the sum of standalone `currentPrice` values.
+- **Overlap prevention** — a test is never billed BOTH standalone and inside a package (double-billing guard). The web UI blocks the silent add (confirm-to-resolve for packages, hard block for standalone adds) and `POST /api/orders` rejects overlapping payloads with a 400.
 
 ## Quality Gates
 
@@ -86,8 +87,10 @@ Secrets are managed via the Freebuff Keys UI in hosted environments; never commi
 npm run typecheck   # per-workspace tsc --noEmit
 npm run lint        # ESLint 0 errors / 0 warnings
 npm run build       # nest build + vite build
-npm test            # Jest unit suite (51 tests: uid, duplicates, packages, billing, splits, tenant scoping, rollups)
-npm run verify:real-db  # embedded PostgreSQL → migrate → seed → real-DB integration suite (8 tests) → state dump
+npm test            # API Jest unit suite + web unit tests (uid, duplicates, packages, overlap, billing, splits, tenant scoping, rollups)
+npm run verify:real-db  # embedded PostgreSQL → migrate → seed → real-DB integration suite (9 tests) → state dump
+
+CI (.github/workflows/ci.yml) runs typecheck/lint/unit/build on every push/PR **and** the real-DB verification, so the embedded-Postgres suite protects every future change automatically.
 ```
 
 ## Repository Layout

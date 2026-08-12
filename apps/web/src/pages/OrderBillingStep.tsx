@@ -1,6 +1,14 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { api, ApiError } from '../lib/api';
 import { inr, round2 } from '../lib/format';
+import {
+  packageAddConfirmMessage,
+  packagesCoveringTest,
+  removeCoveredStandaloneTests,
+  testCoveredBlockMessage,
+  testsOverlappingPackage,
+} from '../lib/order-overlap';
+import type { PackageRef, SelectedTest } from '../lib/order-overlap';
 import { Badge, Button, Field, Modal, TextInput } from '../components/ui';
 
 export interface TestOption {
@@ -68,6 +76,10 @@ const PAYMENT_MODES = [
   { mode: 'bank_transfer', label: 'Bank Transfer' },
   { mode: 'insurance', label: 'Insurance' },
 ] as const;
+
+function toPackageRef(pkg: { id: string; name: string; items: { testId: string; testName: string }[] }): PackageRef {
+  return { id: pkg.id, name: pkg.name, items: pkg.items.map((i) => ({ testId: i.testId, testName: i.testName })) };
+}
 
 function useDebounced(value: string, delay = 350) {
   const [debounced, setDebounced] = useState(value);
@@ -171,6 +183,10 @@ export function OrderBillingStep({
   const [error, setError] = useState('');
   const [submitting, setSubmitting] = useState(false);
 
+  // --- overlap-prevention banners: package-confirm and blocked standalone add ---
+  const [packageConfirm, setPackageConfirm] = useState<{ pkg: PackageOption; overlap: SelectedTest[] } | null>(null);
+  const [coveredBlock, setCoveredBlock] = useState<{ test: TestOption; packages: PackageRef[] } | null>(null);
+
   // --- create-package dialog ---
   const [dialogOpen, setDialogOpen] = useState(false);
   const [pkgName, setPkgName] = useState('');
@@ -271,29 +287,83 @@ export function OrderBillingStep({
   const canCreatePackage = testLines.length >= 2 && !hasPackages;
 
   function addTest(test: TestOption) {
+    // A selected package that already covers this test → block outright
+    // (adding it standalone would double-bill it; nothing valid to confirm).
+    const covering = packagesCoveringTest(
+      test.id,
+      lines.filter((l): l is Extract<Line, { kind: 'package' }> => l.kind === 'package').map((l) => toPackageRef({ id: l.id, name: l.name, items: l.items })),
+    );
+    if (covering.length > 0) {
+      setCoveredBlock({ test, packages: covering });
+      setTestQuery('');
+      setTestResults([]);
+      return;
+    }
+    setCoveredBlock(null);
     setLines((prev) => (prev.some((l) => l.kind === 'test' && l.id === test.id) ? prev : [...prev, { kind: 'test', id: test.id, code: test.testCode, name: test.testName, price: Number(test.currentPrice) }]));
     setTestQuery('');
     setTestResults([]);
   }
 
   function addPackage(pkg: PackageOption) {
-    setLines((prev) =>
-      prev.some((l) => l.kind === 'package' && l.id === pkg.id)
-        ? prev
-        : [
-            ...prev,
-            {
-              kind: 'package',
-              id: pkg.id,
-              code: pkg.packageCode,
-              name: pkg.packageName,
-              price: Number(pkg.packagePrice),
-              items: pkg.items.map((i) => ({ testId: i.testId, testName: i.testName })),
-            },
-          ],
+    // Already in the list → ignore (existing behavior).
+    if (lines.some((l) => l.kind === 'package' && l.id === pkg.id)) {
+      setPkgQuery('');
+      setPkgResults([]);
+      return;
+    }
+    // Overlap with already-selected standalone tests → require an explicit
+    // confirm (this removes the standalone item and prices it as part of the
+    // package — a visible billing change, never merged silently).
+    const overlap = testsOverlappingPackage(
+      toPackageRef({ id: pkg.id, name: pkg.packageName, items: pkg.items }),
+      lines.filter((l): l is Extract<Line, { kind: 'test' }> => l.kind === 'test').map((l) => ({ id: l.id, name: l.name })),
     );
+    if (overlap.length > 0) {
+      setPackageConfirm({ pkg, overlap });
+      setPkgQuery('');
+      setPkgResults([]);
+      return;
+    }
+    setPackageConfirm(null);
+    setLines((prev) => [
+      ...prev,
+      {
+        kind: 'package',
+        id: pkg.id,
+        code: pkg.packageCode,
+        name: pkg.packageName,
+        price: Number(pkg.packagePrice),
+        items: pkg.items.map((i) => ({ testId: i.testId, testName: i.testName })),
+      },
+    ]);
     setPkgQuery('');
     setPkgResults([]);
+  }
+
+  /** "Add package & remove duplicate(s)" — drops the overlapping standalone items, adds the package. */
+  function confirmPackageAdd() {
+    if (!packageConfirm) return;
+    const { pkg } = packageConfirm;
+    setLines((prev) => {
+      const { remaining } = removeCoveredStandaloneTests(
+        toPackageRef({ id: pkg.id, name: pkg.packageName, items: pkg.items }),
+        prev.filter((l): l is Extract<Line, { kind: 'test' }> => l.kind === 'test').map((l) => ({ id: l.id, name: l.name })),
+      );
+      const remainingIds = new Set(remaining.map((t) => t.id));
+      return [
+        ...prev.filter((l) => l.kind !== 'test' || remainingIds.has(l.id)),
+        {
+          kind: 'package',
+          id: pkg.id,
+          code: pkg.packageCode,
+          name: pkg.packageName,
+          price: Number(pkg.packagePrice),
+          items: pkg.items.map((i) => ({ testId: i.testId, testName: i.testName })),
+        },
+      ];
+    });
+    setPackageConfirm(null);
   }
 
   function openPackageDialog() {
@@ -483,6 +553,31 @@ export function OrderBillingStep({
               </Field>
             </div>
           </div>
+
+          {/* Overlap prevention: blocked standalone add (dismissible). */}
+          {coveredBlock && (
+            <div className="flex items-start justify-between gap-2 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800">
+              <span>{testCoveredBlockMessage(coveredBlock.test.testName, coveredBlock.packages)}</span>
+              <button onClick={() => setCoveredBlock(null)} className="font-semibold hover:text-amber-900" aria-label="Dismiss">
+                ×
+              </button>
+            </div>
+          )}
+
+          {/* Overlap prevention: package add needs explicit confirm (billing change). */}
+          {packageConfirm && (
+            <div className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2.5 text-sm text-amber-800">
+              <p>{packageAddConfirmMessage(packageConfirm.overlap, packageConfirm.pkg.packageName)}</p>
+              <div className="mt-2 flex gap-2">
+                <Button variant="primary" className="h-7 px-2.5 text-[12px]" onClick={confirmPackageAdd}>
+                  Add package &amp; remove duplicate(s)
+                </Button>
+                <Button className="h-7 px-2.5 text-[12px]" onClick={() => setPackageConfirm(null)}>
+                  Cancel
+                </Button>
+              </div>
+            </div>
+          )}
 
           <div className="thulir-card">
             <header className="flex items-center justify-between border-b border-slate-100 px-4 py-2.5">

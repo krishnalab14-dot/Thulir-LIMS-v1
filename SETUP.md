@@ -222,7 +222,9 @@ This section records the deliberate decisions the Stage 1 implementation made wh
 ### 14.1 Package billing — packages bill at their OWN price (revised by the Stage 1 review pass)
 **Superseded decision (original build):** packages expanded to their constituent tests and billed at each test's `MasterTest.currentPrice`; `packagePrice` was treated as a catalog/display value only.
 
-**Current decision (review pass, §15.1):** `MasterTestPackage.packagePrice` is the authoritative billing price. A package still produces one `OrderTest` row per constituent test (Stage 2 Result Entry needs a row per test), but `packagePrice` is **distributed across those rows proportionally to each test's standalone price** (`distributePackagePrice` in `apps/api/src/orders/package-pricing.util.ts`), with the 2dp rounding residual applied to the largest share so the distributed values **sum exactly to `packagePrice`**. The order subtotal/total therefore always reflect `packagePrice`, never the sum of standalone prices. E.g. tests priced 700 + 500 (sum 1200) in a package priced 900 → two OrderTest rows at 525 + 375. A test ordered both standalone AND inside a package appears as two line items (the package is a separately priced unit).
+**Current decision (review pass, §15.1):** `MasterTestPackage.packagePrice` is the authoritative billing price. A package still produces one `OrderTest` row per constituent test (Stage 2 Result Entry needs a row per test), but `packagePrice` is **distributed across those rows proportionally to each test's standalone price** (`distributePackagePrice` in `apps/api/src/orders/package-pricing.util.ts`), with the 2dp rounding residual applied to the largest share so the distributed values **sum exactly to `packagePrice`**. The order subtotal/total therefore always reflect `packagePrice`, never the sum of standalone prices. E.g. tests priced 700 + 500 (sum 1200) in a package priced 900 → two OrderTest rows at 525 + 375.
+
+**Overlap rule (Stage 1 follow-up, §16):** a test must NEVER be billed both standalone AND inside a package. The frontend blocks the silent add (confirm-to-resolve for packages, hard block for standalone) and `POST /api/orders` rejects any overlapping payload with a 400. A standalone test and a package may coexist only when their item sets are disjoint.
 
 ### 14.2 patientUid generation — DB-level sequence, not retries
 The spec allows a DB sequence or retry-on-conflict. This build uses a dedicated `UidCounter` table incremented with a single atomic `INSERT ... ON CONFLICT ... RETURNING` (see `apps/api/src/patients/patient-uid.util.ts`), so concurrent registrations serialize on the row lock and can never observe the same counter — collision-safe by construction. Prefix = first 3 alphabetic characters of the org name (e.g. `Thulir Demo Lab` → `THU-2026-0001`).
@@ -243,7 +245,7 @@ To verify the flow end-to-end, these minimal additions exist and are documented 
 - `check-duplicate` also accepts `q` (name/MRN/patientUid) to power the wizard's name/phone/MRN search box
 
 ### 14.7 Validation status (all green)
-`npm run typecheck` ✓ · `npm run lint` (0 errors/warnings) ✓ · `npm run build` ✓ · `npm test` — 8 suites / **51 unit tests** covering: patientUid generation & collision safety, duplicate detection, package-from-selection creation, package-price distribution, discount bounds + subtotal/total cross-check, payment split-sum validation, invoice status derivation, order rollup, and fail-closed tenant scoping ✓ · `npm run verify:real-db` — **8/8 integration tests against real PostgreSQL** (see §15) ✓ · API boots clean (`Thulir API listening on 0.0.0.0:3000`) with all routes mapped ✓
+`npm run typecheck` ✓ · `npm run lint` (0 errors/warnings) ✓ · `npm run build` ✓ · `npm test` — 8 API suites / **54 unit tests** + **11 web unit tests** (node:test, overlap-prevention rules) covering: patientUid generation & collision safety, duplicate detection, package-from-selection creation, package-price distribution, overlap prevention, discount bounds + subtotal/total cross-check, payment split-sum validation, invoice status derivation, order rollup, and fail-closed tenant scoping ✓ · `npm run verify:real-db` — **9/9 integration tests against real PostgreSQL** (see §15/§16) ✓ · API boots clean (`Thulir API listening on 0.0.0.0:3000`) with all routes mapped ✓
 
 ## 15. Stage 1 Review Pass — Package Pricing + Real-DB Verification
 
@@ -269,7 +271,27 @@ Note: PostgreSQL refuses to run as root, so the verification runs under a non-ro
 ### 15.4 Tenant context mechanism today (for Stage 2)
 No auth/login exists yet. `TenantMiddleware` (registered for every route) resolves the organization from the **`x-organization-id` request header**, falling back to `DEFAULT_ORG_ID` (env, seeded org = `org_demo`), and runs the request inside `TenantContextService.run(orgId, ...)` (AsyncLocalStorage). The web app sends `x-organization-id` from `VITE_ORG_ID` (default `org_demo` — see `apps/web/src/lib/api.ts`). User-scoped columns (`createdBy`, `collectedBy`) are stamped with the placeholder `SYSTEM_USER_ID = 'system'` from `apps/api/src/common/constants.ts`. Stage 2 (Sample Collection) should keep using this same mechanism — `collectedBy` will swap to the authenticated user's id once the auth stage lands.
 
-## 16. Freebuff preview commands (documented — CLI unavailable in this sandbox)
+## 16. Stage 1 Follow-up — Overlap Prevention + CI for Real-DB Tests
+
+### 16.1 Overlap prevention: a test is never billed both standalone and inside a package
+Double-billing bug: adding Urea standalone, then a package that also contains Urea, billed Urea twice (once standalone, once inside the package's distributed price). Fixed in both layers:
+
+- **Frontend** (`apps/web/src/pages/OrderBillingStep.tsx` + pure rules in `apps/web/src/lib/order-overlap.ts`):
+  - Adding a package whose constituents overlap already-selected standalone tests → blocked with an inline message naming the test(s), plus an explicit **"Add package & remove duplicate(s)"** confirm (removes the standalone item, adds the package at `packagePrice`) or **Cancel**. Never merged silently.
+  - Adding a standalone test already covered by a selected package → blocked outright: *"Urea is already included in the \"RFT\" package you've added."* Nothing to confirm — the test is already on the order.
+  - The rules are pure, unit-tested functions (11 node:test cases) — no DOM needed.
+- **Server** (`apps/api/src/orders/orders.service.ts`): `POST /api/orders` rejects any payload that still overlaps (e.g. a tampered client) with a 400 naming each conflict (`'Urea' is ordered both standalone and inside package 'RFT'`), inside the same transaction → no rows persist. Reject, never silently merge — consistent with the rest of the billing validation.
+- Regression coverage: 2 API unit tests (reject single + multiple conflicts, no order created) + 1 real-DB e2e test (400, `Order` count unchanged) + 11 web unit tests for the frontend rules. The existing e2e success case was updated to use a disjoint standalone test (Gamma 800 + package 900 → subtotal 1700, total 1530, splits cash:900 + upi:630).
+
+### 16.2 CI now runs the real-DB verification on every push/PR
+`.github/workflows/ci.yml` gained the **Real-DB integration** job (`npm run verify:real-db` — embedded Postgres → migrate → seed → integration tests → unit tests) alongside the existing validate job (typecheck/lint/unit tests/build). Both run on every push to `main` and every PR. The existing jobs are unchanged except that `npm test` now also runs the web unit tests.
+
+**Root-user workaround does NOT apply to CI.** GitHub Actions runners are non-root, so embedded-postgres runs directly — the `runuser -u thulirpg` dance in this sandbox is only needed because the Freebuff sandbox runs as root (PostgreSQL refuses root). CI needs no such handling (confirmed: both CI runs green, ~35s).
+
+### 16.3 Validation after this pass
+`npm run typecheck` ✓ · `npm run lint` ✓ · `npm run build` ✓ · API unit 54/54 ✓ · web unit 11/11 ✓ · `npm run verify:real-db` 9/9 integration + 54/54 unit against real PostgreSQL ✓ · CI green on GitHub Actions.
+
+## 17. Freebuff preview commands (documented — CLI unavailable in this sandbox)
 The `freebuff-preview` CLI is not present in this workspace, so the commands below could not be registered via the tooling. They are exactly what the platform would register once the CLI is available (the root scripts already exist in `package.json`):
 
 ```bash

@@ -222,5 +222,53 @@ describe('order billing validation (server-side)', () => {
       expect(orderData.orderTests.create).toHaveLength(1);
       expect(orderData.orderTests.create[0].snapshottedPrice.toString()).toBe('300');
     });
+
+    it('rejects a test ordered both standalone and inside a package (overlap prevention)', async () => {
+      // Urea standalone (200) + RFT package that ALSO contains Urea → the order
+      // would bill Urea twice. The server rejects instead of silently merging.
+      const tx = mockTx();
+      seedCatalog(tx, { t_urea: '200', t_creat: '150' });
+      tx.masterTestPackage.findMany.mockResolvedValue([
+        { id: 'pkg_rft', packageName: 'RFT', packagePrice: decimal(300), items: [{ testId: 't_urea' }, { testId: 't_creat' }] },
+      ]);
+
+      await expect(
+        runOrderWith(tx, buildOrder({ testIds: ['t_urea'], packageIds: ['pkg_rft'], billing: {}, payment: undefined })),
+      ).rejects.toThrow('both standalone and inside package');
+      expect(tx.order.create).not.toHaveBeenCalled();
+    });
+
+    it('rejects multiple overlapping standalone tests across several packages, naming each conflict', async () => {
+      const tx = mockTx();
+      seedCatalog(tx, { t_urea: '200', t_creat: '150', t_cbc: '400' });
+      tx.masterTestPackage.findMany.mockResolvedValue([
+        { id: 'pkg_rft', packageName: 'RFT', packagePrice: decimal(300), items: [{ testId: 't_urea' }, { testId: 't_creat' }] },
+        { id: 'pkg_cc', packageName: 'CBC+', packagePrice: decimal(450), items: [{ testId: 't_cbc' }] },
+      ]);
+
+      await expect(
+        runOrderWith(
+          tx,
+          buildOrder({ testIds: ['t_urea', 't_cbc'], packageIds: ['pkg_rft', 'pkg_cc'], billing: {}, payment: undefined }),
+        ),
+      ).rejects.toThrow(/both standalone and inside package.*RFT.*CBC\+/);
+      expect(tx.order.create).not.toHaveBeenCalled();
+    });
+
+    it('allows a standalone test and a package when their items are disjoint (no false positive)', async () => {
+      const { tx, promise } = runOrder(
+        buildOrder({ testIds: ['t_cbc'], packageIds: ['pkg_x'], billing: {}, payment: undefined }),
+      );
+      seedCatalog(tx, { t_cbc: '400', t_a: '700', t_b: '500' });
+      tx.masterTestPackage.findMany.mockResolvedValue([
+        { id: 'pkg_x', packageName: 'Bundle', packagePrice: decimal(900), items: [{ testId: 't_a' }, { testId: 't_b' }] },
+      ]);
+
+      await promise;
+
+      const orderData = (tx.order.create as jest.Mock).mock.calls[0][0].data;
+      expect(orderData.subtotal.toString()).toBe('1300'); // 400 standalone + 900 package
+      expect(orderData.orderTests.create).toHaveLength(3);
+    });
   });
 });

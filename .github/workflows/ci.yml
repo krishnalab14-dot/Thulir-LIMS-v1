@@ -41,5 +41,9 @@ jobs:
         run: npm ci
       - name: Generate Prisma client
         run: npm run prisma:generate
+      # Same `npm run verify:real-db` used locally (embedded Postgres → migrate
+      # → seed → integration tests → unit tests). GitHub runners are non-root, so
+      # the sandbox-only `runuser thulirpg` workaround (Postgres refuses root)
+      # does not apply here — embedded-postgres runs directly.
       - name: Migrate · seed · integration tests against real Postgres
         run: npm run verify:real-db
