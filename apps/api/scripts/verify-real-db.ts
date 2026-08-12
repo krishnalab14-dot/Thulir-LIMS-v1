@@ -23,7 +23,12 @@ function run(step: string, cmd: string, env: NodeJS.ProcessEnv = {}): void {
 
 async function main(): Promise<void> {
   const pg = await startEmbeddedPostgres();
-  const dbUrl = `postgresql://thulir:thulir@127.0.0.1:${pg.port}/thulir_lims?schema=public`;
+  // Explicit pool size: the concurrency spec fires 20 interactive transactions
+  // in parallel. Prisma's default pool is `num_cpus * 2 + 1` — fine on the
+  // 48-core sandbox but only ~5 on a 2-core CI runner, which trips P2028
+  // ("Unable to start a transaction in the given time") mid-burst. 25 covers
+  // the burst with headroom; embedded Postgres' default max_connections is 100.
+  const dbUrl = `postgresql://thulir:thulir@127.0.0.1:${pg.port}/thulir_lims?schema=public&connection_limit=25`;
 
   try {
     console.log(`Embedded PostgreSQL listening on 127.0.0.1:${pg.port} (DB: thulir_lims)`);

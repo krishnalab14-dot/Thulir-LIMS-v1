@@ -90,9 +90,10 @@ describe('Stage 1 concurrency verification (real Postgres, Promise.all)', () => 
     );
 
     const bad = results.filter((r) => r.status !== 201);
-    expect(bad).toHaveLength(0);
+    // Fail with the actual statuses + error messages, so a CI failure is
+    // self-explanatory (e.g. P2028 pool exhaustion or P2034 deadlock).
+    expect(bad.map((r) => `${r.status}: ${r.body?.message ?? JSON.stringify(r.body).slice(0, 160)}`)).toEqual([]);
     for (const r of results) {
-      expect(r.status).toBe(201);
       expect(r.body.patientUid).toMatch(/^THU-2026-\d{4}$/);
     }
 
@@ -136,9 +137,10 @@ describe('Stage 1 concurrency verification (real Postgres, Promise.all)', () => 
     );
 
     const bad = results.filter((r) => r.status !== 201);
-    expect(bad).toHaveLength(0); // zero errors — no P2034 deadlock, no P2002 collision
+    // Fail with the actual statuses + error messages (P2028 pool exhaustion,
+    // P2034 deadlock, P2002 collision would all show up here).
+    expect(bad.map((r) => `${r.status}: ${r.body?.message ?? JSON.stringify(r.body).slice(0, 160)}`)).toEqual([]);
     for (const r of results) {
-      expect(r.status).toBe(201);
       const order = r.body;
       expect(order.orderTests).toHaveLength(4); // 1 standalone + 3 package constituents
       expect(order.orderTests.every((t: { status: string }) => t.status === 'pending')).toBe(true);
