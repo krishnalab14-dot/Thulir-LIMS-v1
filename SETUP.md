@@ -403,3 +403,23 @@ New `test-e2e/test-master.e2e-real-db.spec.ts` (8 tests) against real Postgres, 
 **Regression guard note:** §2 rule 4 is a deliberate behavior change — a numeric test with no range at all can no longer be ordered. To keep every prior suite valid without touching their assertions, the seed now defines default ranges, and the e2e test-creation payloads (orders/samples/dedicated/package-swap) that ORDER the tests they create gained `defaultRefLow/defaultRefHigh` in their setup POSTs. No prior assertion, price, sample, or billing expectation changed.
 
 Full suite after this pass: **integration 38/38** (test-master 8 + package-swap 3 + concurrency 2 + samples 10 + orders 11 + dedicated 4) · **unit 72/72** · web unit 18/18 · typecheck ✓ · lint 0 ✓ · build (api + web) ✓ · `verify:real-db` end-to-end ✓. CI green on push.
+
+## 23. Supabase Integration (auth + storage backend)
+
+### 23.1 What was added and why
+Supabase (`@supabase/supabase-js` v2, added to `apps/api`) is the auth + storage backend. The LIMS database **remains Prisma-managed PostgreSQL** — Supabase is itself Postgres-based, and the existing schema/migrations/tenant-scoping are untouched; Supabase is consumed **server-side** by the NestJS API only (the service-role key never reaches the browser).
+
+- `apps/api/src/supabase/supabase.service.ts` — injectable service: lazy anon/admin clients (`createClient`, `persistSession: false`), `projectRef` accessor, `isConfigured()`, and `verifyToken(token)` (validates a Supabase access-token JWT via `auth.getUser` — the building block the auth stage's NestJS guards will use, mapping `user.id` into the user scoping that currently uses `SYSTEM_USER_ID`).
+- `apps/api/src/supabase/supabase.module.ts` — `@Global()` module, exported for any future auth/storage/reports module.
+- **Lazy construction is deliberate:** the app boots and the unit + real-DB suites run before the keys are populated in the Keys tab, so constructing the service never touches the network; only *using* a client without `SUPABASE_URL`/keys throws a clear configuration error.
+- `apps/api/test/supabase.service.spec.ts` — 8 unit tests with `@supabase/supabase-js` mocked (config-gated errors, lazy singleton reuse, `verifyToken` success/error paths, project ref).
+
+### 23.2 Required keys (add to the Freebuff Keys/API-keys tab; names match `apps/api/env.example`)
+| Key | Where to find it |
+| --- | --- |
+| `SUPABASE_URL` | Supabase Dashboard → Project Settings → API → Project URL (`https://<project-ref>.supabase.co`) |
+| `SUPABASE_ANON_KEY` | API → Project API keys → `anon` `public` (publishable, safe for the API server and eventually the web app) |
+| `SUPABASE_SERVICE_ROLE_KEY` | API → Project API keys → `service_role` `secret` — **server-side only**, bypasses RLS; never expose to the browser |
+| `SUPABASE_PROJECT_REF` | The short project reference from the URL (`https://<ref>.supabase.co`) |
+
+Sandbox `.env` values are dev values; production keys go through `freebuff-deploy env set` when the app is deployed. Once the keys are in, `verifyToken` can be exercised end-to-end and the auth stage (NestJS guards + Supabase session flow) is a straight follow-on.

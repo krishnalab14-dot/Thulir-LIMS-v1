@@ -51,6 +51,10 @@ Seeded login (auth is a later stage — the user row exists for the future auth 
 | `DEFAULT_ORG_ID` | `apps/api/.env` | Tenant used when no `x-organization-id` header is sent (until auth lands) |
 | `VITE_API_URL` | `apps/web/.env` | Optional full API base URL (defaults to relative `/api` via the Vite dev proxy / nginx) |
 | `VITE_ORG_ID` | `apps/web/.env` | Organization id header sent by the web app (default `org_demo`) |
+| `SUPABASE_URL` | `apps/api/.env` | Supabase project URL (`https://<ref>.supabase.co`) — auth/storage backend |
+| `SUPABASE_ANON_KEY` | `apps/api/.env` | Supabase public `anon` key |
+| `SUPABASE_SERVICE_ROLE_KEY` | `apps/api/.env` | Supabase secret `service_role` key (server-side only) |
+| `SUPABASE_PROJECT_REF` | `apps/api/.env` | Supabase project reference (from the project URL) |
 
 Secrets are managed via the Freebuff Keys UI in hosted environments; never commit `.env` files.
 

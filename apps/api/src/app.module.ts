@@ -8,10 +8,12 @@ import { PatientsModule } from './patients/patients.module';
 import { PrismaModule } from './prisma/prisma.module';
 import { TenantMiddleware } from './prisma/tenant.middleware';
 import { SamplesModule } from './samples/samples.module';
+import { SupabaseModule } from './supabase/supabase.module';
 
 @Module({
   imports: [
     ConfigModule.forRoot({ isGlobal: true }),
+    SupabaseModule,
     PrismaModule,
     PatientsModule,
     MastersModule,
