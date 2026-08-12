@@ -9,7 +9,7 @@
     "build": "tsc --noEmit -p tsconfig.json && vite build",
     "preview": "vite preview",
     "typecheck": "tsc --noEmit -p tsconfig.json",
-    "test": "node --import tsx --test src/lib/order-overlap.spec.ts"
+    "test": "node --import tsx --test src/lib/order-overlap.spec.ts src/lib/result-flags.spec.ts"
   },
   "dependencies": {
     "react": "^19.0.0",

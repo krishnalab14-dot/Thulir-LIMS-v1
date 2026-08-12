@@ -68,18 +68,31 @@ export function OrderDetail() {
   if (error) return <p className="rounded-md border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-700">{error}</p>;
   if (!order) return null;
 
+  const hasCollectedSamples = order.samples.some((s) => s.status === 'collected');
+
   return (
     <div className="space-y-4">
-      <div>
-        <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">Order detail</p>
-        <h1 className="flex items-center gap-2 text-lg font-bold text-slate-800">
-          <span className="font-mono">{order.id.slice(0, 8).toUpperCase()}</span>
-          {order.isUrgent && <Badge tone="rose">URGENT</Badge>}
-          <Badge tone={ORDER_TONES[order.status] ?? 'slate'}>{order.status.replaceAll('_', ' ')}</Badge>
-        </h1>
-        <p className="text-[13px] text-slate-500">
-          {order.patient.firstName} {order.patient.lastName} · {order.patient.patientUid} · created {formatDateTime(order.createdAt)}
-        </p>
+      <div className="flex items-start justify-between gap-4">
+        <div>
+          <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">Order detail</p>
+          <h1 className="flex items-center gap-2 text-lg font-bold text-slate-800">
+            <span className="font-mono">{order.id.slice(0, 8).toUpperCase()}</span>
+            {order.isUrgent && <Badge tone="rose">URGENT</Badge>}
+            <Badge tone={ORDER_TONES[order.status] ?? 'slate'}>{order.status.replaceAll('_', ' ')}</Badge>
+          </h1>
+          <p className="text-[13px] text-slate-500">
+            {order.patient.firstName} {order.patient.lastName} · {order.patient.patientUid} · created {formatDateTime(order.createdAt)}
+          </p>
+        </div>
+        {hasCollectedSamples && (
+          <Link
+            to={`/orders/${order.id}/results`}
+            className="thulir-btn thulir-btn-primary shrink-0"
+            title="Enter results for the collected samples of this order"
+          >
+            Enter results
+          </Link>
+        )}
       </div>
 
       <div className="grid gap-4 lg:grid-cols-3">

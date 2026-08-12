@@ -78,6 +78,19 @@ export class CreateTestDto {
   @IsString({ each: true })
   resultOptions?: string[];
 
+  /**
+   * Stage 3: parallel array marking which resultOptions are ABNORMAL (e.g. a
+   * qualitative "Positive"). Only meaningful when resultType = options; each
+   * entry must be one of resultOptions (validated in the service). Result
+   * Entry uses it for visual flagging and "Mark All Normal" (fills with the
+   * first non-abnormal option). Purely additive — resultOptions itself is
+   * unchanged.
+   */
+  @IsOptional()
+  @IsArray()
+  @IsString({ each: true })
+  resultOptionsAbnormal?: string[];
+
   /** Default reference range — used when no age/sex specification matches (§2 rule 3). */
   @IsOptional()
   @Type(() => Number)

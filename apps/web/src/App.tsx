@@ -5,6 +5,7 @@ import { MastersTests } from './pages/MastersTests';
 import { OrderDetail } from './pages/OrderDetail';
 import { Orders } from './pages/Orders';
 import { RegisterWizard } from './pages/RegisterWizard';
+import { ResultEntry } from './pages/ResultEntry';
 import { SampleDetail } from './pages/SampleDetail';
 
 export function App() {
@@ -18,6 +19,7 @@ export function App() {
           <Route path="/collection" element={<CollectionWorklist />} />
           <Route path="/orders" element={<Orders />} />
           <Route path="/orders/:id" element={<OrderDetail />} />
+          <Route path="/orders/:id/results" element={<ResultEntry />} />
           <Route path="/samples/:id" element={<SampleDetail />} />
           <Route path="/masters/tests" element={<MastersTests />} />
           <Route path="*" element={<Navigate to="/register" replace />} />

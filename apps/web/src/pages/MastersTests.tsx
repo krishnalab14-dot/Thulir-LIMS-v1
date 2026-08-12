@@ -11,6 +11,8 @@ interface TestRow {
   active: boolean;
   requiresDedicatedSample: boolean;
   resultType: 'numeric' | 'options' | 'text';
+  resultOptions?: string[];
+  resultOptionsAbnormal?: string[];
   requiredSampleType: { id: string; name: string } | null;
   specifications?: { id: string; ageMinYears: number; ageMaxYears: number; sex: string | null; refLow: number; refHigh: number }[];
 }
@@ -63,6 +65,7 @@ export function MastersTests() {
     criticalLow: '',
     criticalHigh: '',
     resultOptions: [] as string[],
+    resultOptionsAbnormal: [] as string[],
     specifications: [] as SpecRow[],
   });
   const [optionInput, setOptionInput] = useState('');
@@ -98,6 +101,7 @@ export function MastersTests() {
       criticalLow: '',
       criticalHigh: '',
       resultOptions: [],
+      resultOptionsAbnormal: [],
       specifications: [],
     });
     setOptionInput('');
@@ -142,7 +146,9 @@ export function MastersTests() {
         requiredSampleTypeId: form.requiredSampleTypeId || undefined,
         requiresDedicatedSample: form.requiresDedicatedSample,
         resultType: form.resultType,
-        ...(form.resultType === 'options' ? { resultOptions: form.resultOptions } : {}),
+        ...(form.resultType === 'options'
+          ? { resultOptions: form.resultOptions, resultOptionsAbnormal: form.resultOptionsAbnormal }
+          : {}),
         ...(form.resultType === 'numeric'
           ? {
               ...(form.defaultRefLow !== '' ? { defaultRefLow: Number(form.defaultRefLow) } : {}),
@@ -171,6 +177,16 @@ export function MastersTests() {
       setForm((f) => ({ ...f, resultOptions: [...f.resultOptions, value] }));
     }
     setOptionInput('');
+  }
+
+  /** Click a chip to toggle whether that option is ABNORMAL (Stage 3 flagging). */
+  function toggleAbnormal(option: string) {
+    setForm((f) => ({
+      ...f,
+      resultOptionsAbnormal: f.resultOptionsAbnormal.includes(option)
+        ? f.resultOptionsAbnormal.filter((o) => o !== option)
+        : [...f.resultOptionsAbnormal, option],
+    }));
   }
 
   function updateSpec(index: number, patch: Partial<SpecRow>) {
@@ -319,19 +335,38 @@ export function MastersTests() {
                 </div>
                 {form.resultOptions.length > 0 && (
                   <div className="flex flex-wrap gap-1.5">
-                    {form.resultOptions.map((opt) => (
-                      <span key={opt} className="inline-flex items-center gap-1 rounded-md bg-brand-50 px-2 py-0.5 text-[12px] font-medium text-brand-800">
-                        {opt}
-                        <button
-                          onClick={() => setForm((f) => ({ ...f, resultOptions: f.resultOptions.filter((o) => o !== opt) }))}
-                          className="text-brand-400 transition hover:text-rose-600"
-                          aria-label={`Remove option ${opt}`}
+                    {form.resultOptions.map((opt) => {
+                      const abnormal = form.resultOptionsAbnormal.includes(opt);
+                      return (
+                        <span
+                          key={opt}
+                          onClick={() => toggleAbnormal(opt)}
+                          title={abnormal ? 'Marked abnormal — click to make normal' : 'Normal — click to mark abnormal'}
+                          className={`inline-flex cursor-pointer items-center gap-1 rounded-md px-2 py-0.5 text-[12px] font-medium transition ${
+                            abnormal ? 'bg-rose-100 text-rose-800 ring-1 ring-rose-300' : 'bg-brand-50 text-brand-800'
+                          }`}
                         >
-                          ×
-                        </button>
-                      </span>
-                    ))}
+                          {opt}
+                          {abnormal && <span className="text-[10px] font-semibold uppercase text-rose-500">abn</span>}
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setForm((f) => ({ ...f, resultOptions: f.resultOptions.filter((o) => o !== opt), resultOptionsAbnormal: f.resultOptionsAbnormal.filter((o) => o !== opt) }));
+                            }}
+                            className="text-brand-400 transition hover:text-rose-600"
+                            aria-label={`Remove option ${opt}`}
+                          >
+                            ×
+                          </button>
+                        </span>
+                      );
+                    })}
                   </div>
+                )}
+                {form.resultOptionsAbnormal.length > 0 && (
+                  <p className="text-[11px] text-slate-400">
+                    Abnormal options are flagged at Result Entry and skipped by "Mark All Normal". Click a chip to toggle.
+                  </p>
                 )}
               </div>
             )}
@@ -377,6 +412,11 @@ export function MastersTests() {
                       </td>
                       <td className="thulir-td">
                         <Badge tone={RESULT_TYPE_TONE[t.resultType] ?? 'slate'}>{t.resultType}</Badge>
+                        {t.resultType === 'options' && (t.resultOptionsAbnormal?.length ?? 0) > 0 && (
+                          <span className="ml-1.5 text-[11px] text-rose-500">
+                            {t.resultOptionsAbnormal!.length} abnormal
+                          </span>
+                        )}
                       </td>
                       <td className="thulir-td text-[12px] text-slate-500">{t.requiredSampleType?.name ?? '—'}</td>
                       <td className="thulir-td">

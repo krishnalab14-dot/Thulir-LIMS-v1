@@ -195,6 +195,12 @@ model MasterTest {
   //   resultType text    → free-form, nothing else applies
   resultType     ResultType @default(numeric)
   resultOptions  String[]   @default([])
+  // Stage 3: parallel array to resultOptions marking which choices are
+  // ABNORMAL (e.g. a qualitative "Positive" option). Purely additive — the
+  // flat resultOptions list is unchanged. Snapshot at order time; Result
+  // Entry uses it for visual flagging (abnormal option styling) and "Mark
+  // All Normal" (fills with the first non-abnormal option).
+  resultOptionsAbnormal String[]   @default([])
   defaultRefLow  Float?
   defaultRefHigh Float?
   criticalLow    Float?
@@ -321,10 +327,21 @@ model OrderTest {
   // yet — captured now so a later alerting stage needs no backfill).
   snapshottedResultType     ResultType?
   snapshottedResultOptions  Json?
+  snapshottedResultOptionsAbnormal String[] @default([])
   snapshottedRefLow         Float?
   snapshottedRefHigh        Float?
   snapshottedCriticalLow    Float?
   snapshottedCriticalHigh   Float?
+
+  // Stage 3 result capture: resultValue is interpreted per
+  // snapshottedResultType (numeric → numeric string, options → one of the
+  // snapshotted options, text → free text). enteredBy/enteredAt stamp the
+  // save; status moves pending → entered (verified/approved are later
+  // stages). Empty text is treated as "not yet entered" and reverts the row
+  // to pending (never advances status).
+  resultValue String?
+  enteredBy   String?
+  enteredAt   DateTime?
 
   @@index([organizationId])
   @@index([orderId])

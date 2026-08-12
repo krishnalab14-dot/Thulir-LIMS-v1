@@ -107,6 +107,21 @@ export class MastersService {
       throw new BadRequestException('An options-type test must define at least one result option');
     }
 
+    // Stage 3: resultOptionsAbnormal is only meaningful for options-type
+    // tests and must be a subset of resultOptions — a data-entry error
+    // caught here, not something Result Entry should ever have to handle.
+    const resultOptionsAbnormal = (dto.resultOptionsAbnormal ?? []).filter((o) => o !== '');
+    if (resultOptionsAbnormal.length > 0 && resultType !== ResultType.options) {
+      throw new BadRequestException('resultOptionsAbnormal only applies to options-type tests');
+    }
+    if (resultOptionsAbnormal.length > 0) {
+      const options = new Set(dto.resultOptions ?? []);
+      const unknown = resultOptionsAbnormal.filter((o) => !options.has(o));
+      if (unknown.length > 0) {
+        throw new BadRequestException(`resultOptionsAbnormal contains options not in resultOptions: ${unknown.join(', ')}`);
+      }
+    }
+
     const specs = (dto.specifications ?? []).map((s) => ({
       ...s,
       sex: s.sex ?? null,
@@ -123,6 +138,7 @@ export class MastersService {
         requiresDedicatedSample: dto.requiresDedicatedSample ?? false,
         resultType,
         resultOptions: resultType === ResultType.options ? (dto.resultOptions ?? []) : [],
+        resultOptionsAbnormal: resultType === ResultType.options ? resultOptionsAbnormal : [],
         defaultRefLow: dto.defaultRefLow ?? null,
         defaultRefHigh: dto.defaultRefHigh ?? null,
         criticalLow: dto.criticalLow ?? null,

@@ -27,9 +27,12 @@ interface ResolvedLineItem {
   sampleTypeName: string | null;
   requiresDedicatedSample: boolean;
   // Stage 2.5 result fields — used to resolve + snapshot the reference range
-  // (and options/critical thresholds) at order time.
+  // (and options/critical thresholds) at order time. Stage 3: the abnormal-
+  // options parallel array is snapshotted too, so Result Entry can flag
+  // qualitative results without ever re-reading MasterTest live.
   resultType: ResultType;
   resultOptions: string[];
+  resultOptionsAbnormal: string[];
   defaultRefLow: number | null;
   defaultRefHigh: number | null;
   criticalLow: number | null;
@@ -220,6 +223,7 @@ export class OrdersService {
             sampleId,
             snapshottedResultType: t.resultType,
             snapshottedResultOptions: t.resultType === ResultType.options ? t.resultOptions : Prisma.JsonNull,
+            snapshottedResultOptionsAbnormal: t.resultType === ResultType.options ? t.resultOptionsAbnormal : [],
             snapshottedRefLow: range?.refLow ?? null,
             snapshottedRefHigh: range?.refHigh ?? null,
             snapshottedCriticalLow: t.criticalLow,
@@ -456,6 +460,7 @@ export class OrdersService {
             requiresDedicatedSample: item?.requiresDedicatedSample ?? false,
             resultType: item?.resultType ?? ResultType.text,
             resultOptions: item?.resultOptions ?? [],
+            resultOptionsAbnormal: item?.resultOptionsAbnormal ?? [],
             defaultRefLow: item?.defaultRefLow ?? null,
             defaultRefHigh: item?.defaultRefHigh ?? null,
             criticalLow: item?.criticalLow ?? null,
@@ -478,6 +483,7 @@ export class OrdersService {
     requiresDedicatedSample: boolean;
     resultType: ResultType;
     resultOptions: string[];
+    resultOptionsAbnormal: string[];
     defaultRefLow: number | null;
     defaultRefHigh: number | null;
     criticalLow: number | null;
@@ -494,6 +500,7 @@ export class OrdersService {
       requiresDedicatedSample: row.requiresDedicatedSample,
       resultType: row.resultType,
       resultOptions: row.resultOptions,
+      resultOptionsAbnormal: row.resultOptionsAbnormal ?? [],
       defaultRefLow: row.defaultRefLow,
       defaultRefHigh: row.defaultRefHigh,
       criticalLow: row.criticalLow,
