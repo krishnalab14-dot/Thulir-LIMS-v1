@@ -301,3 +301,14 @@ freebuff-preview set-build "npm run build"
 ```
 
 Note: the API needs a reachable PostgreSQL (`DATABASE_URL`) — in hosted previews set it via the Keys/API-keys UI (env name `DATABASE_URL`), or run `docker compose up -d db` locally. The web UI renders regardless; API-backed data requires the DB.
+
+## 18. Stage 1 Gate — Concurrency Verification (real Postgres, Promise.all)
+
+Added `apps/api/test-e2e/concurrency.e2e-real-db.spec.ts` — a genuine parallel-load test against the real embedded Postgres (not mocked, not a sequential loop). It fires two full bursts via `Promise.all` through the real HTTP stack:
+
+1. **20 patient registrations in parallel** (`POST /api/patients`) → all 201, `patientUid` values `THU-2026-0001…0020` with **zero collisions** (Set size 20), **gapless strictly-sequential numbering** (counter started at 1; each next = prev + 1), all 20 rows persisted.
+2. **20 order creations in parallel** (`POST /api/orders`), each registering its inline patient in the same transaction (the maximum-contention path — 20 transactions contending for the single `UidCounter` row) → all 201, **zero creation errors**, **no deadlocks** (no P2034 write-conflict/deadlock, no P2002 collision), 4 `OrderTest` rows per order all `pending`, invoices `paid` with exact 2-way splits (cash + upi = subtotal), and per-order snapshot sums equal the server-computed subtotal (package billed at its own price). DB verified directly: 20 orders / 80 `OrderTest` / 20 invoices / 40 `PaymentSplit` rows, all correctly shaped.
+
+Why it cannot fail silently: `patientUid` uses a single atomic `INSERT … ON CONFLICT … RETURNING` on the `UidCounter` row (see §14.2) — concurrent writers serialize on the row lock, so duplicates are impossible by construction and the numbering is provably gapless. A deadlock would surface as a non-2xx response and fail the suite.
+
+Result: **2/2 concurrency tests pass against real PostgreSQL 18.4** (part of `npm run verify:real-db`, now 11 integration tests; also runs in CI's real-db job). Full suite after this pass: integration 11/11 ✓ · unit 54/54 ✓ · typecheck ✓ · lint ✓. The Stage 1 gate is cleared — ready for the Stage 2 (Sample Collection) spec.
