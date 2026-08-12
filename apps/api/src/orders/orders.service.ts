@@ -343,8 +343,17 @@ export class OrdersService {
       const priceById = new Map(itemRows.map((r) => [r.id, r.currentPrice]));
       const nameById = new Map(itemRows.map((r) => [r.id, r.testName]));
 
-      // Overlap prevention (reject, never silently merge): a test selected
-      // standalone must not also sit inside a selected package.
+      // Overlap prevention (reject, never silently merge):
+      //   a) a test selected standalone must not also sit inside a selected
+      //      package (the standalone+package rule, Stage 1 follow-up 1);
+      //   b) two distinct packages must not share a constituent test — that
+      //      would bill the shared test twice across two independently-priced
+      //      bundles, and there is no safe way to "remove just that test" from
+      //      either package without inventing a partial price-redistribution
+      //      rule (Stage 1 follow-up 2). The frontend resolves (b) with an
+      //      explicit swap ("Remove RFT & add Kidney Panel") before
+      //      submitting; if a request still arrives overlapping, it is
+      //      rejected here rather than silently merged.
       const conflicts: string[] = [];
       for (const pkg of packages) {
         for (const item of pkg.items) {
@@ -354,9 +363,24 @@ export class OrdersService {
           }
         }
       }
+      for (let i = 0; i < packages.length; i++) {
+        for (let j = i + 1; j < packages.length; j++) {
+          const a = packages[i];
+          const b = packages[j];
+          const aTestIds = new Set(a.items.map((item) => item.testId));
+          for (const item of b.items) {
+            if (aTestIds.has(item.testId)) {
+              const testName = nameById.get(item.testId) ?? 'Unknown test';
+              conflicts.push(
+                `'${testName}' is included in both package '${a.packageName}' and package '${b.packageName}'`,
+              );
+            }
+          }
+        }
+      }
       if (conflicts.length > 0) {
         throw new BadRequestException(
-          `Overlapping items cannot be billed twice: ${conflicts.join('; ')}. Remove the standalone item(s) or the package(s).`,
+          `Overlapping items cannot be billed twice: ${conflicts.join('; ')}. Remove the duplicated item(s) or one of the conflicting packages.`,
         );
       }
 

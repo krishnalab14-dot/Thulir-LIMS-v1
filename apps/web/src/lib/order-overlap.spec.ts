@@ -2,12 +2,15 @@ import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 import {
   packageAddConfirmMessage,
+  packageSwapConfirmMessage,
   packagesCoveringTest,
+  packagesOverlappingPackage,
   removeCoveredStandaloneTests,
+  removeOverlappingPackages,
   testCoveredBlockMessage,
   testsOverlappingPackage,
 } from './order-overlap';
-import type { PackageRef, SelectedTest } from './order-overlap';
+import type { PackageOverlap, PackageRef, SelectedTest } from './order-overlap';
 
 const urea: SelectedTest = { id: 't_urea', name: 'Urea' };
 const creat: SelectedTest = { id: 't_creat', name: 'Creatinine' };
@@ -82,5 +85,73 @@ describe('order overlap prevention (frontend rules)', () => {
 
   it('block message names the test and the covering package', () => {
     assert.equal(testCoveredBlockMessage('Urea', [rft]), 'Urea is already included in the "RFT" package you\'ve added.');
+  });
+
+  // --- rule 3: package-vs-package overlap (Stage 1 follow-up 2) ---
+
+  const kidney: PackageRef = {
+    id: 'pkg_kidney',
+    name: 'Kidney Panel',
+    items: [
+      { testId: 't_creat', testName: 'Creatinine' },
+      { testId: 't_gluc', testName: 'Glucose' },
+    ],
+  };
+  const lft: PackageRef = {
+    id: 'pkg_lft',
+    name: 'LFT',
+    items: [
+      { testId: 't_alt', testName: 'ALT' },
+      { testId: 't_ast', testName: 'AST' },
+    ],
+  };
+
+  it('blocked package add: detects an existing package overlapping the incoming package', () => {
+    const overlaps = packagesOverlappingPackage(kidney, [rft]);
+    assert.deepEqual(overlaps, [{ existing: rft, overlappingTestIds: ['t_creat'] }]);
+  });
+
+  it('blocked package add: no false positive for disjoint packages', () => {
+    assert.deepEqual(packagesOverlappingPackage(kidney, [lft]), []);
+  });
+
+  it('blocked package add: every overlapping existing package is reported', () => {
+    const lipid: PackageRef = { id: 'pkg_lipid', name: 'Lipid', items: [{ testId: 't_gluc', testName: 'Glucose' }] };
+    const overlaps = packagesOverlappingPackage(kidney, [rft, lipid]);
+    assert.deepEqual(overlaps, [
+      { existing: rft, overlappingTestIds: ['t_creat'] },
+      { existing: lipid, overlappingTestIds: ['t_gluc'] },
+    ]);
+  });
+
+  it('swap-resolution removes every overlapping existing package and keeps the rest', () => {
+    const { remaining, removed } = removeOverlappingPackages(kidney, [rft, lft]);
+    assert.deepEqual(removed, [rft]);
+    assert.deepEqual(remaining, [lft]);
+  });
+
+  it('swap-resolution with no overlap removes nothing', () => {
+    const { remaining, removed } = removeOverlappingPackages(kidney, [lft]);
+    assert.deepEqual(remaining, [lft]);
+    assert.deepEqual(removed, []);
+  });
+
+  it('swap message names the shared test, the covering package, and the incoming package', () => {
+    const overlaps: PackageOverlap[] = [{ existing: rft, overlappingTestIds: ['t_creat'] }];
+    assert.equal(
+      packageSwapConfirmMessage(kidney, overlaps),
+      'Creatinine is already included in "RFT" (already added to this order). Remove "RFT" first if you want to add "Kidney Panel" instead.',
+    );
+  });
+
+  it('swap message names every shared test and every covering package', () => {
+    const overlaps: PackageOverlap[] = [
+      { existing: rft, overlappingTestIds: ['t_creat'] },
+      { existing: { id: 'pkg_lipid', name: 'Lipid', items: [{ testId: 't_gluc', testName: 'Glucose' }] }, overlappingTestIds: ['t_gluc'] },
+    ];
+    assert.equal(
+      packageSwapConfirmMessage(kidney, overlaps),
+      'Creatinine, Glucose are already included in "RFT" and "Lipid" (already added to this order). Remove those packages first if you want to add "Kidney Panel" instead.',
+    );
   });
 });

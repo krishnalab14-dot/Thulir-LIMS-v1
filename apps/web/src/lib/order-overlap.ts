@@ -8,6 +8,11 @@
  *     silently — this is a visible billing change.
  *  2. Adding a standalone test already covered by a selected package → blocked
  *     outright (nothing valid to confirm — the test is already on the order).
+ *  3. Adding a package whose constituents overlap another already-selected
+ *     package → blocked with an explicit swap ("Remove [Package A] & add
+ *     [Package B]") or cancel. No partial merge — the overlapping test is
+ *     embedded inside two independently-priced bundles, so there is no safe
+ *     way to remove just that test from either package.
  *
  * These are pure helpers so the rules are unit-testable without a DOM; the
  * OrderBillingStep component wires them into the add flows. The server also
@@ -66,4 +71,61 @@ export function packageAddConfirmMessage(overlap: SelectedTest[], packageName: s
 export function testCoveredBlockMessage(testName: string, packages: PackageRef[]): string {
   const names = packages.map((p) => `"${p.name}"`).join(' and ');
   return `${testName} is already included in the ${names} package${packages.length === 1 ? '' : 's'} you've added.`;
+}
+
+/** An existing selected package that conflicts with an incoming package, plus
+ *  the constituent test ids they share. */
+export interface PackageOverlap {
+  existing: PackageRef;
+  overlappingTestIds: string[];
+}
+
+/**
+ * Rule-3 detection: every already-selected package whose constituents overlap
+ * the incoming package's constituents (RFT added, then Kidney Panel sharing
+ * Creatinine → reports RFT with the shared test). The incoming package itself
+ * is never reported.
+ */
+export function packagesOverlappingPackage(incoming: PackageRef, packages: PackageRef[]): PackageOverlap[] {
+  const incomingIds = new Set(incoming.items.map((i) => i.testId));
+  const result: PackageOverlap[] = [];
+  for (const p of packages) {
+    if (p.id === incoming.id) continue;
+    const overlappingTestIds = p.items.filter((i) => incomingIds.has(i.testId)).map((i) => i.testId);
+    if (overlappingTestIds.length > 0) {
+      result.push({ existing: p, overlappingTestIds });
+    }
+  }
+  return result;
+}
+
+/**
+ * Rule-3 swap resolution: drop every existing package that overlaps the
+ * incoming package (their full linkage goes with them — the swap replaces the
+ * old bundle, never merges into it) and keep the rest, in order.
+ */
+export function removeOverlappingPackages(
+  incoming: PackageRef,
+  packages: PackageRef[],
+): { remaining: PackageRef[]; removed: PackageRef[] } {
+  const incomingIds = new Set(incoming.items.map((i) => i.testId));
+  return {
+    remaining: packages.filter((p) => !p.items.some((i) => incomingIds.has(i.testId))),
+    removed: packages.filter((p) => p.items.some((i) => incomingIds.has(i.testId))),
+  };
+}
+
+/** Rule-3 message shown alongside the swap action. */
+export function packageSwapConfirmMessage(incoming: PackageRef, overlaps: PackageOverlap[]): string {
+  const testNames = [
+    ...new Set(
+      overlaps.flatMap((o) => o.overlappingTestIds.map((id) => incoming.items.find((i) => i.testId === id)?.testName ?? id)),
+    ),
+  ];
+  const testPlural = testNames.length !== 1;
+  const pkgNames = overlaps.map((o) => `"${o.existing.name}"`).join(' and ');
+  const pkgPlural = overlaps.length !== 1;
+  return `${testNames.join(', ')} ${testPlural ? 'are' : 'is'} already included in ${pkgNames} (already added to this order). Remove ${
+    pkgPlural ? 'those packages' : `"${overlaps[0].existing.name}"`
+  } first if you want to add "${incoming.name}" instead.`;
 }

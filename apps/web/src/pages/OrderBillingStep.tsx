@@ -3,12 +3,15 @@ import { api, ApiError } from '../lib/api';
 import { inr, round2 } from '../lib/format';
 import {
   packageAddConfirmMessage,
+  packageSwapConfirmMessage,
   packagesCoveringTest,
+  packagesOverlappingPackage,
   removeCoveredStandaloneTests,
+  removeOverlappingPackages,
   testCoveredBlockMessage,
   testsOverlappingPackage,
 } from '../lib/order-overlap';
-import type { PackageRef, SelectedTest } from '../lib/order-overlap';
+import type { PackageOverlap, PackageRef, SelectedTest } from '../lib/order-overlap';
 import { Badge, Button, Field, Modal, TextInput } from '../components/ui';
 
 export interface TestOption {
@@ -183,8 +186,9 @@ export function OrderBillingStep({
   const [error, setError] = useState('');
   const [submitting, setSubmitting] = useState(false);
 
-  // --- overlap-prevention banners: package-confirm and blocked standalone add ---
+  // --- overlap-prevention banners: package-confirm, package-swap, blocked standalone add ---
   const [packageConfirm, setPackageConfirm] = useState<{ pkg: PackageOption; overlap: SelectedTest[] } | null>(null);
+  const [packageSwap, setPackageSwap] = useState<{ pkg: PackageOption; overlaps: PackageOverlap[] } | null>(null);
   const [coveredBlock, setCoveredBlock] = useState<{ test: TestOption; packages: PackageRef[] } | null>(null);
 
   // --- create-package dialog ---
@@ -312,11 +316,30 @@ export function OrderBillingStep({
       setPkgResults([]);
       return;
     }
+    const incomingRef = toPackageRef({ id: pkg.id, name: pkg.packageName, items: pkg.items });
+    const existingPackages = lines
+      .filter((l): l is Extract<Line, { kind: 'package' }> => l.kind === 'package')
+      .map((l) => toPackageRef({ id: l.id, name: l.name, items: l.items }));
+
+    // Overlap with an already-selected package → block with an explicit swap
+    // (rule 3): the shared test sits inside two independently-priced bundles,
+    // so there is no safe "remove just that test" resolution. The only actions
+    // are "Remove [A] & add [B]" (full swap) or Cancel. Checked BEFORE the
+    // standalone rule — a standalone confirm would still leave the
+    // package-vs-package conflict in place, which the server would reject.
+    const pkgOverlaps = packagesOverlappingPackage(incomingRef, existingPackages);
+    if (pkgOverlaps.length > 0) {
+      setPackageSwap({ pkg, overlaps: pkgOverlaps });
+      setPkgQuery('');
+      setPkgResults([]);
+      return;
+    }
+
     // Overlap with already-selected standalone tests → require an explicit
     // confirm (this removes the standalone item and prices it as part of the
     // package — a visible billing change, never merged silently).
     const overlap = testsOverlappingPackage(
-      toPackageRef({ id: pkg.id, name: pkg.packageName, items: pkg.items }),
+      incomingRef,
       lines.filter((l): l is Extract<Line, { kind: 'test' }> => l.kind === 'test').map((l) => ({ id: l.id, name: l.name })),
     );
     if (overlap.length > 0) {
@@ -364,6 +387,44 @@ export function OrderBillingStep({
       ];
     });
     setPackageConfirm(null);
+  }
+
+  /**
+   * "Remove [A] & add [B]" — the rule-3 swap. Drops every existing package
+   * overlapping the incoming one (full line-item removal; their OrderTest /
+   * Sample linkage never exists because the order hasn't been submitted yet),
+   * also drops standalone tests the new package covers (they're now priced as
+   * part of the bundle — same rule as the standalone-confirm path), and adds
+   * the incoming package fresh, priced and grouped normally. No partial merge.
+   */
+  function confirmPackageSwap() {
+    if (!packageSwap) return;
+    const { pkg } = packageSwap;
+    const incomingRef = toPackageRef({ id: pkg.id, name: pkg.packageName, items: pkg.items });
+    setLines((prev) => {
+      const existingPackages = prev
+        .filter((l): l is Extract<Line, { kind: 'package' }> => l.kind === 'package')
+        .map((l) => toPackageRef({ id: l.id, name: l.name, items: l.items }));
+      const { removed } = removeOverlappingPackages(incomingRef, existingPackages);
+      const removedIds = new Set(removed.map((p) => p.id));
+      const { remaining } = removeCoveredStandaloneTests(
+        incomingRef,
+        prev.filter((l): l is Extract<Line, { kind: 'test' }> => l.kind === 'test').map((l) => ({ id: l.id, name: l.name })),
+      );
+      const remainingTestIds = new Set(remaining.map((t) => t.id));
+      return [
+        ...prev.filter((l) => (l.kind === 'package' ? !removedIds.has(l.id) : remainingTestIds.has(l.id))),
+        {
+          kind: 'package',
+          id: pkg.id,
+          code: pkg.packageCode,
+          name: pkg.packageName,
+          price: Number(pkg.packagePrice),
+          items: pkg.items.map((i) => ({ testId: i.testId, testName: i.testName })),
+        },
+      ];
+    });
+    setPackageSwap(null);
   }
 
   function openPackageDialog() {
@@ -573,6 +634,26 @@ export function OrderBillingStep({
                   Add package &amp; remove duplicate(s)
                 </Button>
                 <Button className="h-7 px-2.5 text-[12px]" onClick={() => setPackageConfirm(null)}>
+                  Cancel
+                </Button>
+              </div>
+            </div>
+          )}
+
+          {/* Overlap prevention: package-vs-package → explicit swap, never a merge. */}
+          {packageSwap && (
+            <div className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2.5 text-sm text-amber-800">
+              <p>
+                {packageSwapConfirmMessage(
+                  toPackageRef({ id: packageSwap.pkg.id, name: packageSwap.pkg.packageName, items: packageSwap.pkg.items }),
+                  packageSwap.overlaps,
+                )}
+              </p>
+              <div className="mt-2 flex gap-2">
+                <Button variant="primary" className="h-7 px-2.5 text-[12px]" onClick={confirmPackageSwap}>
+                  Remove {packageSwap.overlaps.map((o) => `"${o.existing.name}"`).join(' & ')} &amp; add "{packageSwap.pkg.packageName}"
+                </Button>
+                <Button className="h-7 px-2.5 text-[12px]" onClick={() => setPackageSwap(null)}>
                   Cancel
                 </Button>
               </div>

@@ -33,6 +33,7 @@ describe('Stage 1 real-DB verification', () => {
   let testBId: string;
   let testCId: string;
   let pkgId: string;
+  let kidneyPkgId: string;
 
   const http = () => request(app.getHttpServer());
 
@@ -166,6 +167,40 @@ describe('Stage 1 real-DB verification', () => {
       });
     expect(res.status).toBe(400);
     expect(res.body.message).toContain('both standalone and inside package');
+    const after = await plain.order.count();
+    expect(after).toBe(before); // nothing persisted
+  });
+
+  it('creates a second package overlapping the first (E2E Kidney shares E2E Alpha)', async () => {
+    const d = await http()
+      .post('/api/masters/tests')
+      .set('x-organization-id', ORG)
+      .send({ testCode: 'E2E-DELTA', testName: 'E2E Delta Panel', currentPrice: 300 });
+    expect(d.status).toBe(201);
+    const pkg = await http()
+      .post('/api/masters/packages')
+      .set('x-organization-id', ORG)
+      .send({ packageName: 'E2E Kidney', packagePrice: 800, testIds: [testAId, d.body.id] });
+    expect(pkg.status).toBe(201);
+    kidneyPkgId = pkg.body.id;
+  });
+
+  it('rejects two overlapping packages (400, no order rows) — package-vs-package overlap', async () => {
+    // E2E Bundle [Alpha, Beta] + E2E Kidney [Alpha, Delta] share Alpha →
+    // billing Alpha twice across two package-price distributions. Rejected
+    // server-side; the frontend resolves this with an explicit swap instead.
+    const before = await plain.order.count();
+    const res = await http()
+      .post('/api/orders')
+      .set('x-organization-id', ORG)
+      .send({
+        patient: { firstName: 'Overlap', lastName: 'PkgPkg', gender: 'male', mobile: '9000000008', dob: '1979-05-05' },
+        packageIds: [pkgId, kidneyPkgId],
+        billing: {},
+      });
+    expect(res.status).toBe(400);
+    expect(res.body.message).toContain("both package 'E2E Bundle' and package 'E2E Kidney'");
+    expect(res.body.message).toContain('E2E Alpha Panel'); // names the shared test
     const after = await plain.order.count();
     expect(after).toBe(before); // nothing persisted
   });

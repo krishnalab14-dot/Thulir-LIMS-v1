@@ -359,3 +359,21 @@ Migration `20260812000001_requires_dedicated_sample`: `MasterTest.requiresDedica
 New `test-e2e/dedicated-samples.e2e-real-db.spec.ts` (4 tests) against real Postgres: scenario 2 (shared + dedicated same type → exactly 2 Samples, correct `OrderTest.sampleId` links, distinct barcodes, flag persisted through the API with default false preserved), scenario 3 (shared + two dedicated same type → exactly 3 Samples — the two dedicated tests never grouped), dedicated-vs-shared barcode format separation, and reject-dedicated → `-R2` recollection + selective re-link + billing untouched. The concurrency spec now prefers a dedicated standalone test in its 20-parallel-order burst and asserts **zero barcode collisions** across all orders' samples.
 
 Full suite after this pass: **integration 25/25** (concurrency 2 + orders 9 + samples 10 + dedicated 4) · **unit 61/61** (barcode util now 7 tests) · typecheck ✓ · lint 0 ✓ · build ✓ · `verify:real-db` end-to-end ✓. Scenario 1 (two shared tests same type → 1 Sample) is asserted by the unchanged Stage 2 samples suite. CI is green on push.
+
+## 21. Stage 1 Follow-up 2 — Package-vs-Package Overlap Prevention (build record)
+
+### 21.1 The gap
+Standalone-vs-package overlap was already blocked (Stage 1 follow-up, §16); two **distinct packages** sharing a constituent test (RFT and Kidney Panel both containing Creatinine) were not — both could be added, silently billing the shared test twice across two independently-priced bundles.
+
+### 21.2 Resolution: block + explicit swap, never a partial merge
+There is no safe way to "remove just that test" from either fixed-price bundle without inventing a price-redistribution rule that would make the package no longer cost its stated price. So:
+- **Frontend** (`apps/web/src/lib/order-overlap.ts` rule 3): adding a package whose constituents overlap an already-selected package is blocked with an inline message naming the shared test(s) and the covering package(s) ("Creatinine is already included in \"RFT\" (already added to this order). Remove \"RFT\" first if you want to add \"Kidney Panel\" instead."), plus exactly two actions: **"Remove [A] & add [B]"** (drops every overlapping existing package line AND standalone tests the new package covers — they're now priced as part of the bundle — then adds the new package fresh) or **Cancel** (nothing changes). Checked *before* the standalone rule: a standalone-confirm would still leave the package-vs-package conflict in place.
+- **Backend** (`resolveOrderItems` in `POST /api/orders`): the existing conflict scan now also compares every selected package against every other selected package; a shared constituent → `400` naming both packages and the test (`'Creatinine' is included in both package 'RFT' and package 'Kidney Panel'`), nothing persisted. The server remains the source of truth for a bypassed frontend.
+
+### 21.3 Regression tests (all green, real Postgres)
+- Frontend unit (`order-overlap.spec.ts`, +8): detection (single/multiple overlapping packages, no false positives), swap-resolution removal, exact swap-message strings.
+- `orders.e2e-real-db.spec.ts` (+2): creates a second package overlapping the first via the API, then rejects a both-packages order with the correct message and **zero persisted rows**.
+- New `package-swap.e2e-real-db.spec.ts` (3 tests): the post-swap payload (only Package B) creates **exactly** Package B's `OrderTest` rows + `Sample`s, priced at B's own price distributed (Creatinine 560 + Glucose 140 = 700) and grouped fresh per the §20 rules (dedicated Creatinine tube, shared Glucose tube) with no residue from Package A; the pre-swap order (Package A) is completely untouched (Cancel semantics — its rows, samples, billing intact); a direct both-packages request is rejected with nothing persisted. The packages deliberately include a dedicated + a shared test so the swap path is verified against the §20 grouping rules.
+- Existing standalone+package overlap test passes unmodified (the check was extended, not replaced).
+
+Full suite after this pass: **integration 30/30** (concurrency 2 + orders 11 + samples 10 + dedicated 4 + package-swap 3) · **unit 61/61** · web unit 18/18 · typecheck ✓ · lint 0 ✓ · build (api + web) ✓ · `verify:real-db` end-to-end ✓. CI green on push.
