@@ -1,0 +1,53 @@
+# Thulir LIMS — local development stack (Stage 1)
+#   docker compose up --build
+# Brings up PostgreSQL + the NestJS API + the React web app.
+# Postgres is the only service required for local API/web development:
+#   docker compose up -d db   → then run `npm run dev` from the host.
+services:
+  db:
+    image: postgres:16-alpine
+    container_name: thulir-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: thulir
+      POSTGRES_PASSWORD: thulir
+      POSTGRES_DB: thulir_lims
+    ports:
+      - '5432:5432'
+    volumes:
+      - thulir_pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U thulir -d thulir_lims']
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  api:
+    build:
+      context: .
+      dockerfile: apps/api/Dockerfile
+    container_name: thulir-api
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgresql://thulir:thulir@db:5432/thulir_lims?schema=public
+      PORT: '3000'
+      DEFAULT_ORG_ID: org_demo
+    ports:
+      - '3000:3000'
+
+  web:
+    build:
+      context: .
+      dockerfile: apps/web/Dockerfile
+    container_name: thulir-web
+    restart: unless-stopped
+    depends_on:
+      - api
+    ports:
+      - '5173:80'
+
+volumes:
+  thulir_pgdata:

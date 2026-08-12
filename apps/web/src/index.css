@@ -1,0 +1,74 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  html {
+    @apply text-[15px];
+  }
+  body {
+    @apply bg-slate-100 text-slate-800 antialiased;
+  }
+  ::selection {
+    @apply bg-brand-600 text-white;
+  }
+}
+
+@layer components {
+  /* High-information-density primitives (compose with .thulir-btn etc. in JSX). */
+  .thulir-label {
+    @apply mb-1 block text-[11px] font-semibold uppercase tracking-wide text-slate-500;
+  }
+  .thulir-input {
+    @apply w-full rounded-md border border-slate-300 bg-white px-2.5 py-1.5 text-sm text-slate-800 shadow-sm outline-none transition placeholder:text-slate-400 focus:border-brand-600 focus:ring-2 focus:ring-brand-600/20 disabled:bg-slate-100 disabled:text-slate-500;
+  }
+  .thulir-btn {
+    @apply inline-flex items-center justify-center gap-1.5 rounded-md border px-3 py-1.5 text-sm font-medium transition focus:outline-none focus:ring-2 focus:ring-brand-600/30 disabled:cursor-not-allowed disabled:opacity-50;
+  }
+  .thulir-btn-primary {
+    @apply border-brand-700 bg-brand-700 text-white shadow-sm hover:bg-brand-800;
+  }
+  .thulir-btn-secondary {
+    @apply border-slate-300 bg-white text-slate-700 shadow-sm hover:bg-slate-50;
+  }
+  .thulir-btn-danger {
+    @apply border-rose-200 bg-white text-rose-700 shadow-sm hover:bg-rose-50;
+  }
+  .thulir-card {
+    @apply rounded-lg border border-slate-200 bg-white shadow-sm;
+  }
+  .thulir-th {
+    @apply px-3 py-2 text-left text-[11px] font-semibold uppercase tracking-wide text-slate-500;
+  }
+  .thulir-td {
+    @apply px-3 py-2 text-sm text-slate-700;
+  }
+  .thulir-badge {
+    @apply inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-semibold;
+  }
+}
+
+/* Printable label (registration wizard "Done" step). */
+.print-area {
+  display: none;
+}
+@media print {
+  body {
+    background: #fff;
+  }
+  body * {
+    visibility: hidden;
+  }
+  .print-area,
+  .print-area * {
+    visibility: visible;
+  }
+  .print-area {
+    display: block;
+    position: absolute;
+    left: 0;
+    top: 0;
+    width: 100%;
+    padding: 24px;
+  }
+}

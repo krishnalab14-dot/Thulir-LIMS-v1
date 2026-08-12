@@ -1,0 +1,41 @@
+{
+  "name": "thulir-lims-v1",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Thulir LIMS v1 — Stage 1: Patient Registration, Test/Package Order, Billing",
+  "workspaces": [
+    "apps/*"
+  ],
+  "engines": {
+    "node": ">=20.19.0"
+  },
+  "scripts": {
+    "dev": "concurrently -n api,web -c cyan,magenta \"npm run dev -w @thulir/api\" \"npm run dev -w @thulir/web\"",
+    "dev:api": "npm run dev -w @thulir/api",
+    "dev:web": "npm run dev -w @thulir/web",
+    "build": "npm run build -w @thulir/api && npm run build -w @thulir/web",
+    "typecheck": "npm run typecheck -w @thulir/api && npm run typecheck -w @thulir/web",
+    "lint": "eslint . --max-warnings 0",
+    "format": "prettier --write .",
+    "test": "npm run test -w @thulir/api",
+    "test:integration": "npm run test:integration -w @thulir/api",
+    "verify:real-db": "npm run verify:real-db -w @thulir/api",
+    "prisma:generate": "npm run prisma:generate -w @thulir/api",
+    "prisma:validate": "npm run prisma:validate -w @thulir/api",
+    "db:migrate": "npm run db:migrate -w @thulir/api",
+    "db:seed": "npm run db:seed -w @thulir/api",
+    "db:studio": "npm run db:studio -w @thulir/api"
+  },
+  "devDependencies": {
+    "@eslint/js": "^9.17.0",
+    "concurrently": "^9.1.0",
+    "eslint": "^9.17.0",
+    "eslint-config-prettier": "^9.1.0",
+    "eslint-plugin-react-hooks": "^5.1.0",
+    "eslint-plugin-react-refresh": "^0.4.16",
+    "globals": "^15.14.0",
+    "prettier": "^3.4.2",
+    "typescript": "^5.7.2",
+    "typescript-eslint": "^8.19.0"
+  }
+}
