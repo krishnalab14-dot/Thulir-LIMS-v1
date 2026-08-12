@@ -22,19 +22,20 @@ Monorepo: **npm workspaces** → `apps/api`, `apps/web`.
 # 1. Install workspace dependencies
 npm install
 
-# 2. Configure env (templates are committed as env.example — copy to .env)
+# 2. (Optional) Configure env — templates are committed as env.example:
 cp apps/api/env.example apps/api/.env
 
-# 3. Start PostgreSQL
-docker compose up -d db
-
-# 4. Create schema + seed (org, admin user, sample types, tests, packages, doctors)
-npm run db:migrate
-npm run db:seed
-
-# 5. Run both dev servers (or two terminals: npm run dev:api / dev:web)
+# 3. Run both dev servers (or two terminals: npm run dev:api / dev:web)
 npm run dev
 # API → http://localhost:3000/api  ·  Web → http://localhost:5173
+
+# The API dev entry (apps/api/scripts/dev-api.mjs) resolves the database
+# automatically: it uses DATABASE_URL when one is set (e.g. apps/api/.env
+# pointing at Docker Postgres, or the Freebuff Keys tab) and otherwise boots an
+# embedded PostgreSQL, applies the migrations and seeds the demo org itself.
+# So NO Docker and NO keys are required for `npm run dev` to come up.
+# Docker-Postgres-only flow (if you prefer a separate DB):
+#   docker compose up -d db && npm run db:migrate && npm run db:seed
 
 # 6. Or run the whole stack in containers (Postgres + API + Web)
 docker compose up --build
@@ -47,7 +48,7 @@ Seeded login (auth is a later stage — the user row exists for the future auth 
 | Variable | Where | Purpose |
 | -------- | ----- | ------- |
 | `DATABASE_URL` | `apps/api/.env` | PostgreSQL connection (Prisma) |
-| `PORT` | `apps/api/.env` | API port (default `3000`, binds `0.0.0.0`) |
+| `API_PORT` | `apps/api/.env` | API port (default `3000`, binds `0.0.0.0`). Named `API_PORT`, not `PORT` — Freebuff injects `PORT` for the web dev server, so sharing it made Nest collide with Vite (`EADDRINUSE`) |
 | `DEFAULT_ORG_ID` | `apps/api/.env` | Tenant used when no `x-organization-id` header is sent (until auth lands) |
 | `VITE_API_URL` | `apps/web/.env` | Optional full API base URL (defaults to relative `/api` via the Vite dev proxy / nginx) |
 | `VITE_ORG_ID` | `apps/web/.env` | Organization id header sent by the web app (default `org_demo`) |

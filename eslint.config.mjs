@@ -32,7 +32,7 @@ export default tseslint.config(
     },
   },
   {
-    files: ['apps/api/**/*.ts'],
+    files: ['apps/api/**/*.{ts,js,mjs}'],
     languageOptions: {
       globals: { ...globals.node, ...globals.jest },
     },

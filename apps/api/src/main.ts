@@ -19,7 +19,11 @@ async function bootstrap() {
     }),
   );
 
-  const port = Number(process.env.PORT ?? 3000);
+  // Deliberately NOT `PORT`: Freebuff injects PORT for the web dev server and
+  // Vite binds it, so reading the same variable here made the two dev servers
+  // fight over one port (Nest crashed with EADDRINUSE, the /api proxy 500'd).
+  // The API owns API_PORT (default 3000 — what the Vite proxy targets).
+  const port = Number(process.env.API_PORT ?? 3000);
   await app.listen(port, '0.0.0.0');
   Logger.log(`Thulir API listening on http://0.0.0.0:${port}`, 'Bootstrap');
 }

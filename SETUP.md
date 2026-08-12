@@ -82,25 +82,23 @@ thulir-lims/
 # 1. Install workspace dependencies (from repo root)
 npm install
 
-# 2. Copy environment files
+# 2. (Optional) Copy environment files
 cp apps/api/.env.example apps/api/.env
 cp apps/web/.env.example apps/web/.env
 
-# 3. Start local PostgreSQL
-docker compose up -d
-
-# 4. Create / apply the database schema (Stage 1 tables)
-npm run db:migrate          # = npx prisma migrate dev (from apps/api)
-
-# 5. Seed: organization + admin user + sample sample-types/tests/packages + a doctor party
-npm run db:seed
-
-# 6. Run both dev servers (two terminals, or `npm run dev`)
+# 3. Run both dev servers (two terminals, or `npm run dev`)
 npm run dev:api             # http://localhost:3000
 npm run dev:web             # http://localhost:5173
 ```
 
-> **Sandbox/preview note:** in hosted previews the API dev server must bind to `0.0.0.0` (NestJS `app.listen(PORT, '0.0.0.0')`) so the platform can route to it. The web dev server uses Vite's `--host 0.0.0.0` as well.
+**The dev command is self-sufficient — no Docker, no keys required.** The API dev entry (`apps/api/scripts/dev-api.mjs`) resolves the database in this order:
+1. `DATABASE_URL` from the process environment (Freebuff Keys tab / host env), **only if reachable AND already migrated** (has the `Organization` table);
+2. `DATABASE_URL` from `apps/api/.env` (same reachability + schema check);
+3. Otherwise it boots an **embedded PostgreSQL** (the `embedded-postgres` devDependency, port `5433`), runs `prisma migrate deploy`, and seeds the demo org once (seeding is skipped on later boots so preview data survives restarts). The embedded instance is tied to the dev session's lifetime.
+
+If you prefer a separate Docker Postgres: `docker compose up -d db && npm run db:migrate && npm run db:seed`, then set `DATABASE_URL` in `apps/api/.env`.
+
+> **Sandbox/preview note:** in hosted previews both dev servers bind `0.0.0.0`. The API listens on `API_PORT` (default `3000`) and the web dev server on the Freebuff-injected `PORT` (Vite binds it); the Vite proxy forwards `/api` → `http://localhost:3000`. The API deliberately reads `API_PORT`, NOT `PORT` — a shared `PORT` made the two dev servers collide (`EADDRINUSE`) and the `/api` proxy 500'd.
 
 ---
 
@@ -109,7 +107,7 @@ npm run dev:web             # http://localhost:5173
 | Variable | Used by | Example / Notes |
 | -------- | ------- | --------------- |
 | `DATABASE_URL` | API (Prisma) | `postgresql://thulir:thulir@localhost:5432/thulir_lims?schema=public` |
-| `PORT` | API | `3000` |
+| `API_PORT` | API | `3000` (default; binds `0.0.0.0`). Not `PORT` — see the sandbox note |
 | `VITE_API_URL` | Web | `http://localhost:3000/api` (or a Vite dev proxy `/api` → `:3000`) |
 | `JWT_SECRET` | later stage | Not needed for Stage 1 (auth endpoints are not in this stage) |
 
