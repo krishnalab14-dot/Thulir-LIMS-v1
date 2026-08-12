@@ -68,6 +68,9 @@ describe('Stage 2.1 real-DB verification — dedicated sample override', () => {
           currentPrice: price,
           requiredSampleTypeId: edtaTypeId,
           requiresDedicatedSample: dedicated,
+          // Numeric default range — §2 rule 4 rejects ordering a numeric test with NO range.
+          defaultRefLow: 1,
+          defaultRefHigh: 100,
         });
       expect(res.status).toBe(201);
       return res.body.id as string;

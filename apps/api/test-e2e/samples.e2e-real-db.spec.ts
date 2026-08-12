@@ -65,18 +65,20 @@ describe('Stage 2 real-DB verification — sample collection', () => {
     edtaSampleTypeId = st1.body.id;
     serumSampleTypeId = st2.body.id;
 
+    // Numeric tests carry default ranges — §2 rule 4 rejects ordering a
+    // numeric test with NO range at all.
     const t1 = await http()
       .post('/api/masters/tests')
       .set('x-organization-id', ORG)
-      .send({ testCode: 'S2-EDTA-A', testName: 'S2 EDTA Test A', currentPrice: 100, requiredSampleTypeId: edtaSampleTypeId });
+      .send({ testCode: 'S2-EDTA-A', testName: 'S2 EDTA Test A', currentPrice: 100, requiredSampleTypeId: edtaSampleTypeId, defaultRefLow: 1, defaultRefHigh: 100 });
     const t2 = await http()
       .post('/api/masters/tests')
       .set('x-organization-id', ORG)
-      .send({ testCode: 'S2-EDTA-B', testName: 'S2 EDTA Test B', currentPrice: 150, requiredSampleTypeId: edtaSampleTypeId });
+      .send({ testCode: 'S2-EDTA-B', testName: 'S2 EDTA Test B', currentPrice: 150, requiredSampleTypeId: edtaSampleTypeId, defaultRefLow: 1, defaultRefHigh: 100 });
     const t3 = await http()
       .post('/api/masters/tests')
       .set('x-organization-id', ORG)
-      .send({ testCode: 'S2-SER', testName: 'S2 Serum Test', currentPrice: 200, requiredSampleTypeId: serumSampleTypeId });
+      .send({ testCode: 'S2-SER', testName: 'S2 Serum Test', currentPrice: 200, requiredSampleTypeId: serumSampleTypeId, defaultRefLow: 1, defaultRefHigh: 100 });
     expect([t1.status, t2.status, t3.status]).toEqual([201, 201, 201]);
     tEdtaA = t1.body.id;
     tEdtaB = t2.body.id;

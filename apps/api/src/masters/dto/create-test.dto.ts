@@ -1,5 +1,43 @@
 import { Type } from 'class-transformer';
-import { IsBoolean, IsNotEmpty, IsNumber, IsOptional, IsString, MaxLength, Min } from 'class-validator';
+import {
+  IsArray,
+  IsBoolean,
+  IsIn,
+  IsInt,
+  IsNotEmpty,
+  IsNumber,
+  IsOptional,
+  IsString,
+  MaxLength,
+  Min,
+  ValidateNested,
+} from 'class-validator';
+import { Gender, ResultType } from '@prisma/client';
+
+export class TestSpecificationDto {
+  @Type(() => Number)
+  @IsInt()
+  @Min(0)
+  ageMinYears!: number;
+
+  @Type(() => Number)
+  @IsInt()
+  @Min(0)
+  ageMaxYears!: number;
+
+  /** null = applies to any sex. Reuses Patient's Gender enum (value set identical to the spec's proposed Sex). */
+  @IsOptional()
+  @IsIn(Object.values(Gender))
+  sex?: Gender;
+
+  @Type(() => Number)
+  @IsNumber()
+  refLow!: number;
+
+  @Type(() => Number)
+  @IsNumber()
+  refHigh!: number;
+}
 
 export class CreateTestDto {
   @IsString()
@@ -27,4 +65,45 @@ export class CreateTestDto {
   @IsOptional()
   @IsBoolean()
   requiresDedicatedSample?: boolean;
+
+  // --- Stage 2.5 Test Master extension ---
+
+  @IsOptional()
+  @IsIn(Object.values(ResultType))
+  resultType?: ResultType;
+
+  /** Valid choice list — only meaningful (and required non-empty) when resultType = options. */
+  @IsOptional()
+  @IsArray()
+  @IsString({ each: true })
+  resultOptions?: string[];
+
+  /** Default reference range — used when no age/sex specification matches (§2 rule 3). */
+  @IsOptional()
+  @Type(() => Number)
+  @IsNumber()
+  defaultRefLow?: number;
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsNumber()
+  defaultRefHigh?: number;
+
+  /** Critical thresholds — captured now, consumed by a later alerting stage. */
+  @IsOptional()
+  @Type(() => Number)
+  @IsNumber()
+  criticalLow?: number;
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsNumber()
+  criticalHigh?: number;
+
+  /** Age/sex-scoped reference ranges — overlap-validated at save time (§2). */
+  @IsOptional()
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => TestSpecificationDto)
+  specifications?: TestSpecificationDto[];
 }

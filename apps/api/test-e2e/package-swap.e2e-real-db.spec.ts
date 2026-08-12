@@ -74,7 +74,16 @@ describe('Stage 1 follow-up 2 real-DB verification — package-vs-package swap',
       const res = await http()
         .post('/api/masters/tests')
         .set('x-organization-id', ORG)
-        .send({ testCode, testName, currentPrice: price, requiredSampleTypeId: sampleTypeId, requiresDedicatedSample: dedicated });
+        .send({
+          testCode,
+          testName,
+          currentPrice: price,
+          requiredSampleTypeId: sampleTypeId,
+          requiresDedicatedSample: dedicated,
+          // Numeric default range — §2 rule 4 rejects ordering a numeric test with NO range.
+          defaultRefLow: 1,
+          defaultRefHigh: 100,
+        });
       expect(res.status).toBe(201);
       return res.body.id as string;
     };

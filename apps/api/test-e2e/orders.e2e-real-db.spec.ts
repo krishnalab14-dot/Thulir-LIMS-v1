@@ -72,22 +72,24 @@ describe('Stage 1 real-DB verification', () => {
   });
 
   it('creates priced tests and a package via the API', async () => {
+    // Numeric tests with default ranges — §2 rule 4 rejects ordering a numeric
+    // test with NO range at all, so every test this suite orders carries one.
     const a = await http()
       .post('/api/masters/tests')
       .set('x-organization-id', ORG)
-      .send({ testCode: 'E2E-ALPHA', testName: 'E2E Alpha Panel', currentPrice: 700 });
+      .send({ testCode: 'E2E-ALPHA', testName: 'E2E Alpha Panel', currentPrice: 700, defaultRefLow: 1, defaultRefHigh: 100 });
     expect(a.status).toBe(201);
     const b = await http()
       .post('/api/masters/tests')
       .set('x-organization-id', ORG)
-      .send({ testCode: 'E2E-BETA', testName: 'E2E Beta Panel', currentPrice: 500 });
+      .send({ testCode: 'E2E-BETA', testName: 'E2E Beta Panel', currentPrice: 500, defaultRefLow: 1, defaultRefHigh: 100 });
     expect(b.status).toBe(201);
     // A third test NOT in the package — needed to combine a standalone test
     // with the package without overlapping (overlap is rejected server-side).
     const c = await http()
       .post('/api/masters/tests')
       .set('x-organization-id', ORG)
-      .send({ testCode: 'E2E-GAMMA', testName: 'E2E Gamma Panel', currentPrice: 800 });
+      .send({ testCode: 'E2E-GAMMA', testName: 'E2E Gamma Panel', currentPrice: 800, defaultRefLow: 1, defaultRefHigh: 100 });
     expect(c.status).toBe(201);
     const pkg = await http()
       .post('/api/masters/packages')
@@ -175,7 +177,7 @@ describe('Stage 1 real-DB verification', () => {
     const d = await http()
       .post('/api/masters/tests')
       .set('x-organization-id', ORG)
-      .send({ testCode: 'E2E-DELTA', testName: 'E2E Delta Panel', currentPrice: 300 });
+      .send({ testCode: 'E2E-DELTA', testName: 'E2E Delta Panel', currentPrice: 300, defaultRefLow: 1, defaultRefHigh: 100 });
     expect(d.status).toBe(201);
     const pkg = await http()
       .post('/api/masters/packages')

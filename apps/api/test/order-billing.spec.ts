@@ -52,6 +52,7 @@ describe('order billing validation (server-side)', () => {
       organization: { findUnique: jest.Mock };
       masterTest: { findMany: jest.Mock };
       masterTestPackage: { findMany: jest.Mock };
+      testSpecification: { findMany: jest.Mock };
       party: { findFirst: jest.Mock };
       order: { create: jest.Mock; findFirst: jest.Mock };
       orderTest: { create: jest.Mock };
@@ -67,6 +68,10 @@ describe('order billing validation (server-side)', () => {
         organization: { findUnique: jest.fn().mockResolvedValue({ id: 'org_demo', name: 'Thulir Demo Lab' }) },
         masterTest: { findMany: jest.fn() },
         masterTestPackage: { findMany: jest.fn() },
+        // No TestSpecifications exist in the mocked catalog — the range
+        // resolution for numeric tests falls back to (absent) defaults and
+        // leaves billing untouched, which is what these tests assert.
+        testSpecification: { findMany: jest.fn().mockResolvedValue([]) },
         party: { findFirst: jest.fn() },
         order: {
           create: jest.fn().mockImplementation(async ({ data }: { data: Record<string, unknown> }) => ({ id: 'ord1', ...data })),

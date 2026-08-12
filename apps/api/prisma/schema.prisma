@@ -30,6 +30,17 @@ enum Gender {
   other
 }
 
+// How a test's result is captured/validated at Result Entry (Stage 3):
+//   numeric → validated against a resolved reference range (and critical
+//             thresholds captured now for a later alerting stage)
+//   options → validated against resultOptions
+//   text    → free-form, no range/options
+enum ResultType {
+  numeric
+  options
+  text
+}
+
 enum PartyType {
   doctor
   hospital
@@ -96,13 +107,14 @@ model Organization {
   patients    Patient[]
   tests       MasterTest[]
   packages    MasterTestPackage[]
-  sampleTypes SampleType[]
-  parties     Party[]
-  orders      Order[]
-  orderTests  OrderTest[]
-  invoices    Invoice[]
-  payments    Payment[]
-  samples     Sample[]
+  sampleTypes       SampleType[]
+  parties           Party[]
+  orders            Order[]
+  orderTests        OrderTest[]
+  invoices          Invoice[]
+  payments          Payment[]
+  samples           Sample[]
+  testSpecifications TestSpecification[]
 }
 
 model User {
@@ -175,10 +187,46 @@ model MasterTest {
   requiresDedicatedSample Boolean      @default(false)
   active               Boolean      @default(true)
 
-  packageItems MasterTestPackageItem[]
-  orderTests   OrderTest[]
+  // Stage 2.5 Test Master extension — how results are captured/validated:
+  //   resultType numeric → resolved reference range (defaults or age/sex
+  //     specifications) + critical thresholds (captured now, consumed by a
+  //     later critical-alerting stage)
+  //   resultType options → resultOptions is the valid choice list
+  //   resultType text    → free-form, nothing else applies
+  resultType     ResultType @default(numeric)
+  resultOptions  String[]   @default([])
+  defaultRefLow  Float?
+  defaultRefHigh Float?
+  criticalLow    Float?
+  criticalHigh   Float?
+
+  specifications TestSpecification[]
+  packageItems   MasterTestPackageItem[]
+  orderTests     OrderTest[]
 
   @@index([organizationId])
+}
+
+// Age/sex-scoped reference ranges (Stage 2.5). `sex` reuses the Patient
+// `Gender` enum — its value set (male/female/other) is identical to the spec's
+// proposed `Sex`, so no near-duplicate enum is created; patient `gender` maps
+// 1:1 into this column. `sex = null` means "applies to any sex". Overlapping
+// rows for the same test + sex-tier + age-range are rejected at save time, so
+// Result Entry never has to disambiguate ranges at runtime.
+model TestSpecification {
+  id            String   @id @default(cuid())
+  organizationId String
+  organization  Organization @relation(fields: [organizationId], references: [id])
+  testId        String
+  test          MasterTest @relation(fields: [testId], references: [id])
+  ageMinYears   Int
+  ageMaxYears   Int
+  sex           Gender?
+  refLow        Float
+  refHigh       Float
+
+  @@index([organizationId])
+  @@index([testId])
 }
 
 model MasterTestPackage {
@@ -247,7 +295,10 @@ model Order {
 
 // Per-test workflow granularity: pending → entered → verified → approved.
 // snapshottedPrice / testNameSnapshot are captured at order time and are
-// NEVER re-read live from MasterTest afterwards (snapshot principle).
+// NEVER re-read live from MasterTest afterwards (snapshot principle). The
+// Stage 2.5 result fields are snapshotted the same way — the resolved range
+// and options are frozen at order time; a later Masters change to the test's
+// ranges never affects already-placed orders.
 model OrderTest {
   id               String         @id @default(cuid())
   organizationId   String
@@ -261,6 +312,19 @@ model OrderTest {
   status           OrderTestStatus @default(pending)
   sampleId         String?
   sample           Sample?        @relation(fields: [sampleId], references: [id])
+
+  // Stage 2.5 result snapshots (nullable until populated by the order
+  // transaction; always set for new orders). resultType copied directly;
+  // resultOptions copied when resultType = options; refLow/refHigh resolved
+  // per §2 (spec match → any-sex spec → default) only for numeric;
+  // critical thresholds copied directly for numeric (nothing consumes them
+  // yet — captured now so a later alerting stage needs no backfill).
+  snapshottedResultType     ResultType?
+  snapshottedResultOptions  Json?
+  snapshottedRefLow         Float?
+  snapshottedRefHigh        Float?
+  snapshottedCriticalLow    Float?
+  snapshottedCriticalHigh   Float?
 
   @@index([organizationId])
   @@index([orderId])

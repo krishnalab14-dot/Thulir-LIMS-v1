@@ -1,11 +1,12 @@
 import { BadRequestException, Injectable } from '@nestjs/common';
-import { Prisma } from '@prisma/client';
+import { Gender, Prisma, ResultType } from '@prisma/client';
 import { randomBytes } from 'node:crypto';
 import { PrismaService } from '../prisma/prisma.service';
 import { TenantContextService } from '../prisma/tenant-context.service';
 import { CreatePackageDto } from './dto/create-package.dto';
 import { CreateSampleTypeDto } from './dto/create-sample-type.dto';
 import { CreateTestDto } from './dto/create-test.dto';
+import { specificationsOverlap } from './reference-range.util';
 
 @Injectable()
 export class MastersService {
@@ -68,12 +69,18 @@ export class MastersService {
     }));
   }
 
-  /** Full list for the minimal Masters page. */
+  /** Full list for the minimal Masters page (incl. Stage 2.5 result fields + specs). */
   async listTests() {
     return this.prisma.prisma.masterTest.findMany({
       where: { active: true },
       orderBy: { testName: 'asc' },
-      include: { requiredSampleType: { select: { id: true, name: true } } },
+      include: {
+        requiredSampleType: { select: { id: true, name: true } },
+        specifications: {
+          orderBy: [{ ageMinYears: 'asc' }, { ageMaxYears: 'asc' }],
+          select: { id: true, ageMinYears: true, ageMaxYears: true, sex: true, refLow: true, refHigh: true },
+        },
+      },
     });
   }
 
@@ -94,6 +101,18 @@ export class MastersService {
         throw new BadRequestException('requiredSampleTypeId does not exist');
       }
     }
+
+    const resultType = dto.resultType ?? ResultType.numeric;
+    if (resultType === ResultType.options && (!dto.resultOptions || dto.resultOptions.length === 0)) {
+      throw new BadRequestException('An options-type test must define at least one result option');
+    }
+
+    const specs = (dto.specifications ?? []).map((s) => ({
+      ...s,
+      sex: s.sex ?? null,
+    }));
+    this.validateSpecifications(specs);
+
     return this.prisma.prisma.masterTest.create({
       data: {
         organizationId: orgId,
@@ -102,8 +121,58 @@ export class MastersService {
         currentPrice: new Prisma.Decimal(dto.currentPrice),
         requiredSampleTypeId: dto.requiredSampleTypeId ?? null,
         requiresDedicatedSample: dto.requiresDedicatedSample ?? false,
+        resultType,
+        resultOptions: resultType === ResultType.options ? (dto.resultOptions ?? []) : [],
+        defaultRefLow: dto.defaultRefLow ?? null,
+        defaultRefHigh: dto.defaultRefHigh ?? null,
+        criticalLow: dto.criticalLow ?? null,
+        criticalHigh: dto.criticalHigh ?? null,
+        specifications:
+          specs.length > 0
+            ? { create: specs.map((s) => ({ organizationId: orgId, ageMinYears: s.ageMinYears, ageMaxYears: s.ageMaxYears, sex: s.sex, refLow: s.refLow, refHigh: s.refHigh })) }
+            : undefined,
+      },
+      include: {
+        requiredSampleType: { select: { id: true, name: true } },
+        specifications: {
+          orderBy: [{ ageMinYears: 'asc' }, { ageMaxYears: 'asc' }],
+          select: { id: true, ageMinYears: true, ageMaxYears: true, sex: true, refLow: true, refHigh: true },
+        },
       },
     });
+  }
+
+  /**
+   * §2 overlap validation — data-entry error, caught at save time so Result
+   * Entry never has to disambiguate ranges at runtime. Rejects any pair of
+   * specs (within this request) that share the same sex tier (both any-sex,
+   * or the same exact sex) AND an overlapping age range, naming the conflict.
+   */
+  private validateSpecifications(
+    specs: { ageMinYears: number; ageMaxYears: number; sex: Gender | null; refLow: number; refHigh: number }[],
+  ): void {
+    for (let i = 0; i < specs.length; i++) {
+      const a = specs[i];
+      if (a.ageMinYears > a.ageMaxYears) {
+        throw new BadRequestException(
+          `Specification ${i + 1}: ageMinYears (${a.ageMinYears}) must not exceed ageMaxYears (${a.ageMaxYears})`,
+        );
+      }
+      if (a.refLow > a.refHigh) {
+        throw new BadRequestException(
+          `Specification ${i + 1}: refLow (${a.refLow}) must not exceed refHigh (${a.refHigh})`,
+        );
+      }
+      for (let j = i + 1; j < specs.length; j++) {
+        const b = specs[j];
+        if (specificationsOverlap(a, b)) {
+          const sexLabel = a.sex === null ? 'any sex' : `sex=${a.sex}`;
+          throw new BadRequestException(
+            `Specifications ${i + 1} and ${j + 1} overlap for the same test: both apply to ${sexLabel} and ages ${a.ageMinYears}-${a.ageMaxYears} intersect ${b.ageMinYears}-${b.ageMaxYears}. Age/sex ranges must not overlap.`,
+          );
+        }
+      }
+    }
   }
 
   /** Inline package creation — reusable MasterTestPackage, visible to fresh searches immediately. */

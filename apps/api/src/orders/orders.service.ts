@@ -1,7 +1,8 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
-import { Order, Prisma } from '@prisma/client';
+import { Gender, Order, Prisma, ResultType } from '@prisma/client';
 import { deriveInvoiceStatus, normalizeAndValidateSplits, roundMoney, sumSplits } from '../billing/payment.util';
 import { SYSTEM_USER_ID } from '../common/constants';
+import { patientAgeYears, resolveReferenceRange, ResolvedRange, SpecLike } from '../masters/reference-range.util';
 import { PatientsService } from '../patients/patients.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { TenantContextService } from '../prisma/tenant-context.service';
@@ -25,6 +26,14 @@ interface ResolvedLineItem {
   sampleTypeCode: string | null;
   sampleTypeName: string | null;
   requiresDedicatedSample: boolean;
+  // Stage 2.5 result fields — used to resolve + snapshot the reference range
+  // (and options/critical thresholds) at order time.
+  resultType: ResultType;
+  resultOptions: string[];
+  defaultRefLow: number | null;
+  defaultRefHigh: number | null;
+  criticalLow: number | null;
+  criticalHigh: number | null;
 }
 
 @Injectable()
@@ -55,14 +64,20 @@ export class OrdersService {
       // 1. Patient: link an existing one or register a new one in-transaction
       //    (running the duplicate-ready identity checks + collision-safe UID logic).
       let patientId = dto.patient.patientId ?? null;
+      let patientAge = 0;
+      let patientSex: Gender = 'other';
       if (patientId) {
         const existing = await tx.patient.findUnique({ where: { id: patientId } });
         if (!existing) {
           throw new BadRequestException('Referenced patient does not exist');
         }
+        patientAge = patientAgeYears(existing);
+        patientSex = existing.gender;
       } else {
         const created = await this.patients.createPatientInTx(tx, orgId, dto.patient);
         patientId = created.id;
+        patientAge = patientAgeYears(created);
+        patientSex = created.gender;
       }
 
       // 2. Resolve testIds + expand packageIds into line items. Standalone
@@ -71,6 +86,40 @@ export class OrdersService {
       //    Prices are always looked up from the DB — any price the frontend
       //    might send is rejected outright by forbidNonWhitelisted + never used.
       const { items, subtotal } = await this.resolveOrderItems(tx, orgId, dto.testIds ?? [], dto.packageIds ?? []);
+
+      // 2.5 Stage 2.5: resolve the reference range for every NUMERIC test at
+      //    this exact moment (§2 — spec match → any-sex spec → default). A
+      //    numeric test with no default range and no matching specification is
+      //    rejected outright (never snapshot a null/undefined range). The
+      //    resolved values are snapshotted below and are NEVER re-read live
+      //    from MasterTest/TestSpecification afterwards.
+      const specRows = await tx.testSpecification.findMany({
+        where: { testId: { in: items.map((t) => t.testId) } },
+      });
+      const specsByTest = new Map<string, SpecLike[]>();
+      for (const s of specRows) {
+        const list = specsByTest.get(s.testId) ?? [];
+        list.push({ ageMinYears: s.ageMinYears, ageMaxYears: s.ageMaxYears, sex: s.sex, refLow: s.refLow, refHigh: s.refHigh });
+        specsByTest.set(s.testId, list);
+      }
+      const resolvedRangeByTest = new Map<string, ResolvedRange>();
+      const noRange: string[] = [];
+      for (const t of items) {
+        if (t.resultType !== ResultType.numeric) {
+          continue;
+        }
+        const range = resolveReferenceRange(specsByTest.get(t.testId) ?? [], t, patientAge, patientSex);
+        if (!range) {
+          noRange.push(t.testName);
+        } else {
+          resolvedRangeByTest.set(t.testId, range);
+        }
+      }
+      if (noRange.length > 0) {
+        throw new BadRequestException(
+          `Cannot order: ${noRange.join(', ')} has no reference range for this patient. Define a default range or a matching age/sex specification in Masters first.`,
+        );
+      }
 
       // 3. Totals, computed server-side (discount already validated above).
       const total = computeOrderTotal(subtotal, discountPercent);
@@ -156,6 +205,11 @@ export class OrdersService {
             ? (dedicatedSampleIdByTest.get(t.testId) ?? null)
             : (sampleIdByType.get(t.requiredSampleTypeId) ?? null);
         }
+        // Stage 2.5 snapshots: resultType always; resultOptions when options;
+        // resolved refLow/refHigh when numeric (already validated above);
+        // critical thresholds copied directly from MasterTest (captured now
+        // for a later alerting stage — not resolution-dependent).
+        const range = resolvedRangeByTest.get(t.testId);
         await tx.orderTest.create({
           data: {
             organizationId: orgId,
@@ -164,6 +218,12 @@ export class OrdersService {
             testNameSnapshot: t.testName,
             snapshottedPrice: t.price,
             sampleId,
+            snapshottedResultType: t.resultType,
+            snapshottedResultOptions: t.resultType === ResultType.options ? t.resultOptions : Prisma.JsonNull,
+            snapshottedRefLow: range?.refLow ?? null,
+            snapshottedRefHigh: range?.refHigh ?? null,
+            snapshottedCriticalLow: t.criticalLow,
+            snapshottedCriticalHigh: t.criticalHigh,
           },
         });
       }
@@ -307,15 +367,7 @@ export class OrdersService {
         throw new BadRequestException('One or more selected tests do not exist or are inactive');
       }
       for (const row of rows) {
-        items.push({
-          testId: row.id,
-          testName: row.testName,
-          price: row.currentPrice,
-          requiredSampleTypeId: row.requiredSampleTypeId,
-          sampleTypeCode: row.requiredSampleType?.code ?? null,
-          sampleTypeName: row.requiredSampleType?.name ?? null,
-          requiresDedicatedSample: row.requiresDedicatedSample,
-        });
+        items.push(this.toResolvedItem(row));
       }
     }
 
@@ -393,14 +445,21 @@ export class OrdersService {
         })));
         for (const d of distributed) {
           const row = rowById.get(d.testId);
+          const item = row ? this.toResolvedItem(row) : null;
           items.push({
             testId: d.testId,
             testName: d.testName,
             price: d.price,
-            requiredSampleTypeId: row?.requiredSampleTypeId ?? null,
-            sampleTypeCode: row?.requiredSampleType?.code ?? null,
-            sampleTypeName: row?.requiredSampleType?.name ?? null,
-            requiresDedicatedSample: row?.requiresDedicatedSample ?? false,
+            requiredSampleTypeId: item?.requiredSampleTypeId ?? null,
+            sampleTypeCode: item?.sampleTypeCode ?? null,
+            sampleTypeName: item?.sampleTypeName ?? null,
+            requiresDedicatedSample: item?.requiresDedicatedSample ?? false,
+            resultType: item?.resultType ?? ResultType.text,
+            resultOptions: item?.resultOptions ?? [],
+            defaultRefLow: item?.defaultRefLow ?? null,
+            defaultRefHigh: item?.defaultRefHigh ?? null,
+            criticalLow: item?.criticalLow ?? null,
+            criticalHigh: item?.criticalHigh ?? null,
           });
         }
       }
@@ -408,5 +467,37 @@ export class OrdersService {
 
     const subtotal = roundMoney(items.reduce((acc, t) => acc.plus(t.price), new Prisma.Decimal(0)));
     return { items, subtotal };
+  }
+
+  /** Maps a MasterTest row into a ResolvedLineItem (Stage 2.5 result fields included). */
+  private toResolvedItem(row: {
+    id: string;
+    testName: string;
+    currentPrice: Prisma.Decimal;
+    requiredSampleTypeId: string | null;
+    requiresDedicatedSample: boolean;
+    resultType: ResultType;
+    resultOptions: string[];
+    defaultRefLow: number | null;
+    defaultRefHigh: number | null;
+    criticalLow: number | null;
+    criticalHigh: number | null;
+    requiredSampleType?: { code: string | null; name: string } | null;
+  }): ResolvedLineItem {
+    return {
+      testId: row.id,
+      testName: row.testName,
+      price: row.currentPrice,
+      requiredSampleTypeId: row.requiredSampleTypeId,
+      sampleTypeCode: row.requiredSampleType?.code ?? null,
+      sampleTypeName: row.requiredSampleType?.name ?? null,
+      requiresDedicatedSample: row.requiresDedicatedSample,
+      resultType: row.resultType,
+      resultOptions: row.resultOptions,
+      defaultRefLow: row.defaultRefLow,
+      defaultRefHigh: row.defaultRefHigh,
+      criticalLow: row.criticalLow,
+      criticalHigh: row.criticalHigh,
+    };
   }
 }
