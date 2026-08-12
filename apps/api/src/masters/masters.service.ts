@@ -101,6 +101,7 @@ export class MastersService {
         testName: dto.testName.trim(),
         currentPrice: new Prisma.Decimal(dto.currentPrice),
         requiredSampleTypeId: dto.requiredSampleTypeId ?? null,
+        requiresDedicatedSample: dto.requiresDedicatedSample ?? false,
       },
     });
   }

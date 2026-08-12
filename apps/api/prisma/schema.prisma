@@ -168,6 +168,11 @@ model MasterTest {
   currentPrice         Decimal      @db.Decimal(12, 2)
   requiredSampleTypeId String?
   requiredSampleType   SampleType?  @relation(fields: [requiredSampleTypeId], references: [id])
+  // Stage 2.1 per-test sample override: false (default) = shares a tube with
+  // other tests of the same sample type on the same order; true = always gets
+  // its own dedicated Sample/tube, even when another test on the same order
+  // has the identical sampleTypeId.
+  requiresDedicatedSample Boolean      @default(false)
   active               Boolean      @default(true)
 
   packageItems MasterTestPackageItem[]
@@ -305,11 +310,12 @@ model PaymentSplit {
   @@index([paymentId])
 }
 
-// One Sample per distinct required sample type among an order's tests.
-// Barcode is deterministic (order-id prefix + sampleType code, -R2/-R3… on
-// recollection), generated inside the order transaction. Rejections keep the
-// rejected row for audit and auto-create a recollection linked via
-// recollectionOfSampleId.
+// One Sample per distinct required sample type among an order's NON-dedicated
+// tests, plus one Sample per test flagged requiresDedicatedSample (Stage 2.1).
+// Barcode is deterministic (order-id prefix + sampleType code, with the test id
+// appended for dedicated samples; -R2/-R3… on recollection), generated inside
+// the order transaction. Rejections keep the rejected row for audit and
+// auto-create a recollection linked via recollectionOfSampleId.
 model Sample {
   id                     String           @id @default(cuid())
   organizationId         String

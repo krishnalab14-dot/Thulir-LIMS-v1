@@ -1,5 +1,5 @@
 import { Type } from 'class-transformer';
-import { IsNotEmpty, IsNumber, IsOptional, IsString, MaxLength, Min } from 'class-validator';
+import { IsBoolean, IsNotEmpty, IsNumber, IsOptional, IsString, MaxLength, Min } from 'class-validator';
 
 export class CreateTestDto {
   @IsString()
@@ -20,4 +20,11 @@ export class CreateTestDto {
   @IsOptional()
   @IsString()
   requiredSampleTypeId?: string;
+
+  // Stage 2.1 per-test override: true ⇒ this test always gets its own
+  // dedicated Sample/tube, even when another test on the same order shares
+  // its sample type. Defaults false (shares a tube, as in Stage 2).
+  @IsOptional()
+  @IsBoolean()
+  requiresDedicatedSample?: boolean;
 }

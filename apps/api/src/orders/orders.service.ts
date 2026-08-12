@@ -9,12 +9,14 @@ import { BillingDto, CreateOrderDto } from './dto/create-order.dto';
 import { computeOrderStatus } from './order-status.util';
 import { computeOrderTotal } from './order-totals.util';
 import { distributePackagePrice } from './package-pricing.util';
-import { buildSampleBarcode } from '../samples/sample-barcode.util';
+import { buildDedicatedSampleBarcode, buildSampleBarcode } from '../samples/sample-barcode.util';
 
 /** One OrderTest row to snapshot: a standalone test at its current price, or a
  *  package constituent at its share of the package's own price. Sample-type
  *  fields are carried for Stage 2 sample creation (one Sample per distinct
- *  required sample type among the ordered tests). */
+ *  required sample type among the ordered tests); requiresDedicatedSample is
+ *  the Stage 2.1 per-test override (true ⇒ that test gets its own tube even
+ *  when another test on the order shares its sample type). */
 interface ResolvedLineItem {
   testId: string;
   testName: string;
@@ -22,6 +24,7 @@ interface ResolvedLineItem {
   requiredSampleTypeId: string | null;
   sampleTypeCode: string | null;
   sampleTypeName: string | null;
+  requiresDedicatedSample: boolean;
 }
 
 @Injectable()
@@ -83,11 +86,14 @@ export class OrdersService {
         }
       }
 
-      // 6. Create the Order, then one Sample per distinct required sample type
-      //    (Stage 2 — a CBC + LFT order needing the same tube type gets one
-      //    Sample; different tube types get one each), then OrderTest rows
-      //    linked to their Sample. Snapshots are captured NOW; barcodes are
-      //    deterministic (order-id prefix + tube code), so no counter/race risk.
+      // 6. Create the Order, then Samples + OrderTest rows (Stage 2 / 2.1).
+      //    Grouping rule: NON-dedicated tests share one Sample per distinct
+      //    required sample type (a CBC + LFT order needing the same tube gets
+      //    one Sample); each requiresDedicatedSample test gets its OWN Sample
+      //    even if another test on the order has the identical sample type.
+      //    Snapshots are captured NOW; barcodes are deterministic (full order
+      //    id + tube code, + full test id for dedicated samples), so there is
+      //    no counter/race risk under parallel order creation.
       const order = await tx.order.create({
         data: {
           organizationId: orgId,
@@ -104,12 +110,14 @@ export class OrdersService {
         },
       });
 
+      // Shared (non-dedicated) tests: one Sample per distinct required type.
       const sampleIdByType = new Map<string, string>();
-      const sampleTypeIds = [
-        ...new Set(items.map((t) => t.requiredSampleTypeId).filter((id): id is string => id != null)),
+      const sharedItems = items.filter((t) => !t.requiresDedicatedSample);
+      const sharedTypeIds = [
+        ...new Set(sharedItems.map((t) => t.requiredSampleTypeId).filter((id): id is string => id != null)),
       ];
-      for (const typeId of sampleTypeIds) {
-        const first = items.find((t) => t.requiredSampleTypeId === typeId)!;
+      for (const typeId of sharedTypeIds) {
+        const first = sharedItems.find((t) => t.requiredSampleTypeId === typeId)!;
         const sample = await tx.sample.create({
           data: {
             organizationId: orgId,
@@ -121,7 +129,33 @@ export class OrdersService {
         sampleIdByType.set(typeId, sample.id);
       }
 
+      // Dedicated tests: one Sample per test. Dedupe by testId — the same test
+      // selected twice in one order (e.g. via two overlapping packages) is the
+      // same physical tube and must not generate a duplicate barcode; this
+      // keeps barcode uniqueness guaranteed by construction, not by luck.
+      const dedicatedSampleIdByTest = new Map<string, string>();
+      for (const t of items.filter((item) => item.requiresDedicatedSample)) {
+        if (!t.requiredSampleTypeId || dedicatedSampleIdByTest.has(t.testId)) {
+          continue;
+        }
+        const sample = await tx.sample.create({
+          data: {
+            organizationId: orgId,
+            orderId: order.id,
+            sampleTypeId: t.requiredSampleTypeId,
+            barcodeValue: buildDedicatedSampleBarcode(order.id, t.sampleTypeCode, t.sampleTypeName, t.testId),
+          },
+        });
+        dedicatedSampleIdByTest.set(t.testId, sample.id);
+      }
+
       for (const t of items) {
+        let sampleId: string | null = null;
+        if (t.requiredSampleTypeId) {
+          sampleId = t.requiresDedicatedSample
+            ? (dedicatedSampleIdByTest.get(t.testId) ?? null)
+            : (sampleIdByType.get(t.requiredSampleTypeId) ?? null);
+        }
         await tx.orderTest.create({
           data: {
             organizationId: orgId,
@@ -129,7 +163,7 @@ export class OrdersService {
             testId: t.testId,
             testNameSnapshot: t.testName,
             snapshottedPrice: t.price,
-            sampleId: t.requiredSampleTypeId ? (sampleIdByType.get(t.requiredSampleTypeId) ?? null) : null,
+            sampleId,
           },
         });
       }
@@ -280,6 +314,7 @@ export class OrdersService {
           requiredSampleTypeId: row.requiredSampleTypeId,
           sampleTypeCode: row.requiredSampleType?.code ?? null,
           sampleTypeName: row.requiredSampleType?.name ?? null,
+          requiresDedicatedSample: row.requiresDedicatedSample,
         });
       }
     }
@@ -341,6 +376,7 @@ export class OrdersService {
             requiredSampleTypeId: row?.requiredSampleTypeId ?? null,
             sampleTypeCode: row?.requiredSampleType?.code ?? null,
             sampleTypeName: row?.requiredSampleType?.name ?? null,
+            requiresDedicatedSample: row?.requiresDedicatedSample ?? false,
           });
         }
       }

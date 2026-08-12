@@ -29,6 +29,24 @@ export function buildSampleBarcode(orderId: string, sampleTypeCode: string | nul
   return `${orderId.toUpperCase()}-${code}`;
 }
 
+/**
+ * Dedicated-sample variant (Stage 2.1): appends the FULL test id so two tests
+ * of the same sample type on the same order always get distinct barcodes.
+ * The full id is used (never a truncated slice) for the same reason as the
+ * order id: cuid v2's leading characters are timestamp-derived, so truncating
+ * would reintroduce the same-millisecond collision the concurrency test caught.
+ * e.g. order `cm5a…` + code `EDTA` + test `cm5t…` → `CM5A…-EDTA-CM5T…`.
+ */
+export function buildDedicatedSampleBarcode(
+  orderId: string,
+  sampleTypeCode: string | null | undefined,
+  sampleTypeName: string | null | undefined,
+  testId: string,
+): string {
+  const code = deriveSampleTypeCode(sampleTypeName, sampleTypeCode);
+  return `${orderId.toUpperCase()}-${code}-${testId.toUpperCase()}`;
+}
+
 /** `ABC-EDTA` → `ABC-EDTA-R2`; `ABC-EDTA-R2` → `ABC-EDTA-R3`. */
 export function nextRecollectionBarcode(currentBarcode: string): string {
   const match = /^(.*)-R(\d+)$/.exec(currentBarcode);

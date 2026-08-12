@@ -54,10 +54,15 @@ describe('Stage 1 concurrency verification (real Postgres, Promise.all)', () => 
     );
 
     // Pick a package + a standalone test NOT inside it (overlap is rejected
-    // server-side, so the pair must be disjoint).
+    // server-side, so the pair must be disjoint). Stage 2.1: prefer a test
+    // flagged requiresDedicatedSample so the burst exercises the dedicated
+    // barcode path under parallel load; fall back to a shared test if the
+    // seeded catalog has none left outside the chosen package.
     const pkg = await plain.masterTestPackage.findFirst({ where: { active: true }, include: { items: true } });
     const inPkg = pkg?.items.map((i) => i.testId) ?? [];
-    const test = await plain.masterTest.findFirst({ where: { active: true, id: { notIn: inPkg } } });
+    const test =
+      (await plain.masterTest.findFirst({ where: { active: true, requiresDedicatedSample: true, id: { notIn: inPkg } } })) ??
+      (await plain.masterTest.findFirst({ where: { active: true, id: { notIn: inPkg } } }));
     if (!pkg || !test) {
       throw new Error('seeded catalog missing a package or a disjoint standalone test');
     }
@@ -185,5 +190,15 @@ describe('Stage 1 concurrency verification (real Postgres, Promise.all)', () => 
       const sum = o.orderTests.reduce((acc, t) => acc.plus(t.snapshottedPrice), new Prisma.Decimal(0));
       expect(Number(sum)).toBe(subtotal);
     }
+
+    // Stage 2.1 regression: this burst mixes dedicated and shared tests, so
+    // every sample barcode must still be unique across all 20 orders — the
+    // dedicated barcode (full order id + test id) must not reintroduce the
+    // same-millisecond collision the shared barcode's truncation caused.
+    const samples = await plain.sample.findMany({ where: { orderId: { in: orderIds } } });
+    expect(samples.length).toBeGreaterThanOrEqual(BATCH * 2); // package tubes + dedicated standalone
+    const barcodes = samples.map((s) => s.barcodeValue);
+    expect(new Set(barcodes).size).toBe(barcodes.length); // zero barcode collisions
+    expect(samples.every((s) => s.status === 'pending_collection')).toBe(true);
   });
 });

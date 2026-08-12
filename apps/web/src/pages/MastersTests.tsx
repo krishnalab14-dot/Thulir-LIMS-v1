@@ -9,6 +9,7 @@ interface TestRow {
   testName: string;
   currentPrice: string;
   active: boolean;
+  requiresDedicatedSample: boolean;
   requiredSampleType: { id: string; name: string } | null;
 }
 
@@ -24,7 +25,13 @@ export function MastersTests() {
   const [error, setError] = useState('');
   const [saving, setSaving] = useState(false);
 
-  const [form, setForm] = useState({ testCode: '', testName: '', currentPrice: '', requiredSampleTypeId: '' });
+  const [form, setForm] = useState({
+    testCode: '',
+    testName: '',
+    currentPrice: '',
+    requiredSampleTypeId: '',
+    requiresDedicatedSample: false,
+  });
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -62,8 +69,9 @@ export function MastersTests() {
         testName: form.testName.trim(),
         currentPrice: price,
         requiredSampleTypeId: form.requiredSampleTypeId || undefined,
+        requiresDedicatedSample: form.requiresDedicatedSample,
       });
-      setForm({ testCode: '', testName: '', currentPrice: '', requiredSampleTypeId: '' });
+      setForm({ testCode: '', testName: '', currentPrice: '', requiredSampleTypeId: '', requiresDedicatedSample: false });
       await load();
     } catch (e) {
       setError(e instanceof ApiError ? e.message : 'Could not create the test');
@@ -105,6 +113,20 @@ export function MastersTests() {
                 ))}
               </Select>
             </Field>
+            <label className="flex items-start gap-2 pt-1">
+              <input
+                type="checkbox"
+                checked={form.requiresDedicatedSample}
+                onChange={(e) => setForm((f) => ({ ...f, requiresDedicatedSample: e.target.checked }))}
+                className="mt-0.5 h-3.5 w-3.5 rounded border-slate-300 text-brand-600 focus:ring-brand-600"
+              />
+              <span className="text-[13px] leading-snug text-slate-700">
+                Requires dedicated sample tube
+                <span className="block text-[11px] font-normal text-slate-400">
+                  Always gets its own tube, even when another test on the same order shares its sample type.
+                </span>
+              </span>
+            </label>
             <Button variant="primary" className="w-full" onClick={() => void createTest()} disabled={saving}>
               {saving ? 'Saving…' : 'Add Test'}
             </Button>
@@ -122,6 +144,7 @@ export function MastersTests() {
                     <th className="thulir-th">Code</th>
                     <th className="thulir-th">Name</th>
                     <th className="thulir-th">Sample Type</th>
+                    <th className="thulir-th">Tube</th>
                     <th className="thulir-th text-right">Price</th>
                     <th className="thulir-th">Status</th>
                   </tr>
@@ -132,6 +155,13 @@ export function MastersTests() {
                       <td className="thulir-td font-mono text-[12px] font-semibold text-brand-700">{t.testCode}</td>
                       <td className="thulir-td text-[13px]">{t.testName}</td>
                       <td className="thulir-td text-[12px] text-slate-500">{t.requiredSampleType?.name ?? '—'}</td>
+                      <td className="thulir-td">
+                        {t.requiresDedicatedSample ? (
+                          <Badge tone="amber">dedicated</Badge>
+                        ) : (
+                          <Badge tone="slate">shared</Badge>
+                        )}
+                      </td>
                       <td className="thulir-td text-right font-mono text-[13px] font-semibold">{inr(t.currentPrice)}</td>
                       <td className="thulir-td">
                         <Badge tone={t.active ? 'green' : 'slate'}>{t.active ? 'active' : 'inactive'}</Badge>

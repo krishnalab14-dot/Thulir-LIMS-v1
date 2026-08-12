@@ -40,9 +40,12 @@ async function main() {
       { id: 't_esr', organizationId: ORG_ID, testCode: 'ESR', testName: 'Erythrocyte Sedimentation Rate', currentPrice: 250, requiredSampleTypeId: 'st_edta' },
       { id: 't_bloodgroup', organizationId: ORG_ID, testCode: 'BG', testName: 'Blood Group & Rh Typing', currentPrice: 150, requiredSampleTypeId: 'st_edta' },
       { id: 't_fbs', organizationId: ORG_ID, testCode: 'FBS', testName: 'Fasting Blood Sugar', currentPrice: 150, requiredSampleTypeId: 'st_serum' },
-      { id: 't_hba1c', organizationId: ORG_ID, testCode: 'HBA1C', testName: 'Glycated Haemoglobin (HbA1c)', currentPrice: 600, requiredSampleTypeId: 'st_edta' },
+      // Stage 2.1: HbA1c gets its own dedicated tube even when ordered alongside
+      // other EDTA tests (contamination-sensitive assay).
+      { id: 't_hba1c', organizationId: ORG_ID, testCode: 'HBA1C', testName: 'Glycated Haemoglobin (HbA1c)', currentPrice: 600, requiredSampleTypeId: 'st_edta', requiresDedicatedSample: true },
       { id: 't_lipid', organizationId: ORG_ID, testCode: 'LIPID', testName: 'Lipid Profile', currentPrice: 800, requiredSampleTypeId: 'st_serum' },
-      { id: 't_tsh', organizationId: ORG_ID, testCode: 'TSH', testName: 'Thyroid Stimulating Hormone', currentPrice: 350, requiredSampleTypeId: 'st_serum' },
+      // Stage 2.1: TSH also demands a dedicated serum tube (lab protocol).
+      { id: 't_tsh', organizationId: ORG_ID, testCode: 'TSH', testName: 'Thyroid Stimulating Hormone', currentPrice: 350, requiredSampleTypeId: 'st_serum', requiresDedicatedSample: true },
       { id: 't_lft', organizationId: ORG_ID, testCode: 'LFT', testName: 'Liver Function Test', currentPrice: 700, requiredSampleTypeId: 'st_serum' },
       { id: 't_kft', organizationId: ORG_ID, testCode: 'KFT', testName: 'Kidney Function Test', currentPrice: 650, requiredSampleTypeId: 'st_serum' },
       { id: 't_urine', organizationId: ORG_ID, testCode: 'URT', testName: 'Urine Routine & Microscopy', currentPrice: 200, requiredSampleTypeId: 'st_urine' },
@@ -50,7 +53,7 @@ async function main() {
       { id: 't_crp', organizationId: ORG_ID, testCode: 'CRP', testName: 'C-Reactive Protein', currentPrice: 450, requiredSampleTypeId: 'st_serum' },
     ],
   });
-  console.log('Seeded 12 tests');
+  console.log('Seeded 12 tests (2 marked requiresDedicatedSample: HBA1C, TSH)');
 
   // Packages — a package bills at its OWN packagePrice (distributed across its
   // constituent OrderTest rows), never at the sum of the tests' standalone

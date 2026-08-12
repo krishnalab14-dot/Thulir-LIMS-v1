@@ -340,3 +340,22 @@ Migration `20260812000000_add_sample_collection`: `Sample` model (org-scoped, ba
 New `test-e2e/samples.e2e-real-db.spec.ts` (9 tests, runs in `verify:real-db` + CI): order→samples creation (2 tube types → 2 Samples, deterministic barcodes, OrderTest links), worklist contents/ordering, collect with actor/timestamp + removal from worklist, **double-collect race (Promise.all) → exactly one 200 + one 409** with a single `collectedAt`, reject `other`-without-note → 400, reject → recollection `-R2` + re-link + billing untouched, reject again → `-R3` + 3-level chain visible from both the original and the middle node, label endpoint, and fail-closed tenant scoping on `Sample` (no context throws; cross-tenant collect attempt is a safe 409, no mutation).
 
 Full suite after Stage 2: **integration 21/21** (concurrency 2 + orders 9 + samples 10) · **unit 58/58** (incl. 4 barcode-util tests) · typecheck ✓ · lint 0 ✓ · build (api + web) ✓ · `verify:real-db` end-to-end ✓ · CI green.
+
+## 20. Stage 2 Follow-up — Per-Test Dedicated Sample Override (build record)
+
+### 20.1 Schema
+Migration `20260812000001_requires_dedicated_sample`: `MasterTest.requiresDedicatedSample BOOLEAN NOT NULL DEFAULT false` — additive, non-breaking. `false` (default) preserves Stage 2 behavior exactly (shares a tube with other tests of the same sample type); `true` means the test always gets its own dedicated `Sample`/tube, even when another test on the same order has the identical `sampleTypeId`.
+
+### 20.2 Grouping rule (in the `POST /api/orders` transaction)
+1. Resolved line items are split by the flag. Non-dedicated tests group by `sampleTypeId` exactly as before — one shared `Sample` per distinct type. Dedicated tests each get their own `Sample`, never grouped with each other or with the shared group.
+2. Dedicated barcodes append the **full test id**: `<order.id uppercased>-<sampleType.code>-<test.id uppercased>`. The full id (never a truncated slice) is used for the same reason as the order id in §19.2 — cuid's leading characters are timestamp-derived, so truncation would re-introduce the same-millisecond collision. A shared sample's `-R2` recollection and a dedicated barcode can never collide (format separation).
+3. If the same dedicated test appears twice in one order (e.g. the same test inside two overlapping packages), it is deduped to one `Sample` — the same physical tube — so barcode uniqueness remains guaranteed by construction.
+4. Rejection of a dedicated sample recollects with the suffix after the test id (`…-<test.id>-R2`, `-R3`…), re-links only that sample's `OrderTest` rows, and never touches billing — identical semantics to the shared-sample path.
+
+### 20.3 Masters
+`POST /api/masters/tests` accepts `requiresDedicatedSample` (boolean, optional, defaults false); the Masters page's Add-Test form has a "Requires dedicated sample tube" checkbox (default unchecked) and the catalog table shows a dedicated/shared tube badge. Seed marks HBA1C (EDTA) and TSH (serum) as dedicated so the seed catalog itself exercises both paths.
+
+### 20.4 Real-DB verification (all green)
+New `test-e2e/dedicated-samples.e2e-real-db.spec.ts` (4 tests) against real Postgres: scenario 2 (shared + dedicated same type → exactly 2 Samples, correct `OrderTest.sampleId` links, distinct barcodes, flag persisted through the API with default false preserved), scenario 3 (shared + two dedicated same type → exactly 3 Samples — the two dedicated tests never grouped), dedicated-vs-shared barcode format separation, and reject-dedicated → `-R2` recollection + selective re-link + billing untouched. The concurrency spec now prefers a dedicated standalone test in its 20-parallel-order burst and asserts **zero barcode collisions** across all orders' samples.
+
+Full suite after this pass: **integration 25/25** (concurrency 2 + orders 9 + samples 10 + dedicated 4) · **unit 61/61** (barcode util now 7 tests) · typecheck ✓ · lint 0 ✓ · build ✓ · `verify:real-db` end-to-end ✓. Scenario 1 (two shared tests same type → 1 Sample) is asserted by the unchanged Stage 2 samples suite. CI is green on push.
