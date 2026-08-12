@@ -19,6 +19,7 @@ const TENANT_MODELS = new Set([
   'OrderTest',
   'Invoice',
   'Payment',
+  'Sample',
 ]);
 
 /** Pure helper: AND-combine a caller's where with a hard organizationId filter. */

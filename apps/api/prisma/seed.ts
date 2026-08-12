@@ -25,11 +25,11 @@ async function main() {
 
   const sampleTypes = await prisma.sampleType.createMany({
     data: [
-      { id: 'st_edta', organizationId: ORG_ID, name: 'EDTA Blood' },
-      { id: 'st_serum', organizationId: ORG_ID, name: 'Serum' },
-      { id: 'st_urine', organizationId: ORG_ID, name: 'Urine' },
-      { id: 'st_whole_blood', organizationId: ORG_ID, name: 'Whole Blood' },
-      { id: 'st_plasma', organizationId: ORG_ID, name: 'Plasma' },
+      { id: 'st_edta', organizationId: ORG_ID, name: 'EDTA Blood', code: 'EDTA' },
+      { id: 'st_serum', organizationId: ORG_ID, name: 'Serum', code: 'SER' },
+      { id: 'st_urine', organizationId: ORG_ID, name: 'Urine', code: 'URN' },
+      { id: 'st_whole_blood', organizationId: ORG_ID, name: 'Whole Blood', code: 'WB' },
+      { id: 'st_plasma', organizationId: ORG_ID, name: 'Plasma', code: 'PLA' },
     ],
   });
   console.log(`Seeded ${sampleTypes.count} sample types`);

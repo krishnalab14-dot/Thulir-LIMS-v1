@@ -1,8 +1,11 @@
 import { Navigate, Route, Routes } from 'react-router-dom';
 import { NavBar } from './components/NavBar';
+import { CollectionWorklist } from './pages/CollectionWorklist';
 import { MastersTests } from './pages/MastersTests';
+import { OrderDetail } from './pages/OrderDetail';
 import { Orders } from './pages/Orders';
 import { RegisterWizard } from './pages/RegisterWizard';
+import { SampleDetail } from './pages/SampleDetail';
 
 export function App() {
   return (
@@ -12,7 +15,10 @@ export function App() {
         <Routes>
           <Route path="/" element={<Navigate to="/register" replace />} />
           <Route path="/register" element={<RegisterWizard />} />
+          <Route path="/collection" element={<CollectionWorklist />} />
           <Route path="/orders" element={<Orders />} />
+          <Route path="/orders/:id" element={<OrderDetail />} />
+          <Route path="/samples/:id" element={<SampleDetail />} />
           <Route path="/masters/tests" element={<MastersTests />} />
           <Route path="*" element={<Navigate to="/register" replace />} />
         </Routes>

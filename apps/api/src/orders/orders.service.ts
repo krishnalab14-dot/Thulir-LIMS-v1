@@ -1,4 +1,4 @@
-import { BadRequestException, Injectable } from '@nestjs/common';
+import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { Order, Prisma } from '@prisma/client';
 import { deriveInvoiceStatus, normalizeAndValidateSplits, roundMoney, sumSplits } from '../billing/payment.util';
 import { SYSTEM_USER_ID } from '../common/constants';
@@ -9,13 +9,19 @@ import { BillingDto, CreateOrderDto } from './dto/create-order.dto';
 import { computeOrderStatus } from './order-status.util';
 import { computeOrderTotal } from './order-totals.util';
 import { distributePackagePrice } from './package-pricing.util';
+import { buildSampleBarcode } from '../samples/sample-barcode.util';
 
 /** One OrderTest row to snapshot: a standalone test at its current price, or a
- *  package constituent at its share of the package's own price. */
+ *  package constituent at its share of the package's own price. Sample-type
+ *  fields are carried for Stage 2 sample creation (one Sample per distinct
+ *  required sample type among the ordered tests). */
 interface ResolvedLineItem {
   testId: string;
   testName: string;
   price: Prisma.Decimal;
+  requiredSampleTypeId: string | null;
+  sampleTypeCode: string | null;
+  sampleTypeName: string | null;
 }
 
 @Injectable()
@@ -77,7 +83,11 @@ export class OrdersService {
         }
       }
 
-      // 6. Create Order + OrderTest rows with snapshots captured NOW.
+      // 6. Create the Order, then one Sample per distinct required sample type
+      //    (Stage 2 — a CBC + LFT order needing the same tube type gets one
+      //    Sample; different tube types get one each), then OrderTest rows
+      //    linked to their Sample. Snapshots are captured NOW; barcodes are
+      //    deterministic (order-id prefix + tube code), so no counter/race risk.
       const order = await tx.order.create({
         data: {
           organizationId: orgId,
@@ -91,16 +101,38 @@ export class OrdersService {
           discountPercent,
           totalAmount: total,
           createdBy: SYSTEM_USER_ID,
-          orderTests: {
-            create: items.map((t) => ({
-              organizationId: orgId,
-              testId: t.testId,
-              testNameSnapshot: t.testName,
-              snapshottedPrice: t.price,
-            })),
-          },
         },
       });
+
+      const sampleIdByType = new Map<string, string>();
+      const sampleTypeIds = [
+        ...new Set(items.map((t) => t.requiredSampleTypeId).filter((id): id is string => id != null)),
+      ];
+      for (const typeId of sampleTypeIds) {
+        const first = items.find((t) => t.requiredSampleTypeId === typeId)!;
+        const sample = await tx.sample.create({
+          data: {
+            organizationId: orgId,
+            orderId: order.id,
+            sampleTypeId: typeId,
+            barcodeValue: buildSampleBarcode(order.id, first.sampleTypeCode, first.sampleTypeName),
+          },
+        });
+        sampleIdByType.set(typeId, sample.id);
+      }
+
+      for (const t of items) {
+        await tx.orderTest.create({
+          data: {
+            organizationId: orgId,
+            orderId: order.id,
+            testId: t.testId,
+            testNameSnapshot: t.testName,
+            snapshottedPrice: t.price,
+            sampleId: t.requiredSampleTypeId ? (sampleIdByType.get(t.requiredSampleTypeId) ?? null) : null,
+          },
+        });
+      }
 
       // 7. Invoice.
       const invoice = await tx.invoice.create({
@@ -144,6 +176,31 @@ export class OrdersService {
         },
       });
     });
+  }
+
+  /** Read-only detail used by the Orders page's Samples section (Stage 2). */
+  async getOrderDetail(id: string) {
+    const order = await this.prisma.prisma.order.findUnique({
+      where: { id },
+      include: {
+        patient: { select: { id: true, patientUid: true, firstName: true, lastName: true, gender: true, mobile: true } },
+        orderTests: {
+          select: { id: true, testNameSnapshot: true, snapshottedPrice: true, status: true, sampleId: true },
+        },
+        invoice: { select: { id: true, status: true, subtotal: true, discountPercent: true, totalAmount: true } },
+        samples: {
+          orderBy: { createdAt: 'asc' },
+          include: {
+            sampleType: { select: { id: true, name: true, code: true } },
+            orderTests: { select: { id: true, testNameSnapshot: true } },
+          },
+        },
+      },
+    });
+    if (!order) {
+      throw new NotFoundException('Order not found');
+    }
+    return order;
   }
 
   /** Minimal read endpoint so the web Orders page can verify created orders. */
@@ -208,12 +265,22 @@ export class OrdersService {
     // Standalone tests (dedupe repeated ids within the standalone list).
     const uniqueTestIds = [...new Set(testIds)];
     if (uniqueTestIds.length > 0) {
-      const rows = await tx.masterTest.findMany({ where: { id: { in: uniqueTestIds }, active: true } });
+      const rows = await tx.masterTest.findMany({
+        where: { id: { in: uniqueTestIds }, active: true },
+        include: { requiredSampleType: { select: { code: true, name: true } } },
+      });
       if (rows.length !== uniqueTestIds.length) {
         throw new BadRequestException('One or more selected tests do not exist or are inactive');
       }
       for (const row of rows) {
-        items.push({ testId: row.id, testName: row.testName, price: row.currentPrice });
+        items.push({
+          testId: row.id,
+          testName: row.testName,
+          price: row.currentPrice,
+          requiredSampleTypeId: row.requiredSampleTypeId,
+          sampleTypeCode: row.requiredSampleType?.code ?? null,
+          sampleTypeName: row.requiredSampleType?.name ?? null,
+        });
       }
     }
 
@@ -228,7 +295,13 @@ export class OrdersService {
         throw new BadRequestException('One or more selected packages do not exist or are inactive');
       }
       const itemTestIds = [...new Set(packages.flatMap((p) => p.items.map((i) => i.testId)))];
-      const itemRows = itemTestIds.length > 0 ? await tx.masterTest.findMany({ where: { id: { in: itemTestIds }, active: true } }) : [];
+      const itemRows =
+        itemTestIds.length > 0
+          ? await tx.masterTest.findMany({
+              where: { id: { in: itemTestIds }, active: true },
+              include: { requiredSampleType: { select: { code: true, name: true } } },
+            })
+          : [];
       if (itemRows.length !== itemTestIds.length) {
         throw new BadRequestException('A selected package contains a test that is missing or inactive');
       }
@@ -252,13 +325,24 @@ export class OrdersService {
         );
       }
 
+      const rowById = new Map(itemRows.map((r) => [r.id, r]));
       for (const pkg of packages) {
         const distributed = distributePackagePrice(pkg.packagePrice, pkg.items.map((i) => ({
           testId: i.testId,
           testName: nameById.get(i.testId) ?? 'Unknown test',
           standalonePrice: priceById.get(i.testId) ?? new Prisma.Decimal(0),
         })));
-        items.push(...distributed);
+        for (const d of distributed) {
+          const row = rowById.get(d.testId);
+          items.push({
+            testId: d.testId,
+            testName: d.testName,
+            price: d.price,
+            requiredSampleTypeId: row?.requiredSampleTypeId ?? null,
+            sampleTypeCode: row?.requiredSampleType?.code ?? null,
+            sampleTypeName: row?.requiredSampleType?.name ?? null,
+          });
+        }
       }
     }
 

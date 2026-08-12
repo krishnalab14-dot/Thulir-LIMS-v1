@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { Badge, Button, Card, EmptyState, Spinner } from '../components/ui';
 import { api, ApiError } from '../lib/api';
 import { formatDateTime, inr } from '../lib/format';
@@ -27,6 +28,7 @@ const ORDER_TONES: Record<string, string> = {
 };
 
 export function Orders() {
+  const navigate = useNavigate();
   const [orders, setOrders] = useState<OrderRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -80,7 +82,12 @@ export function Orders() {
             </thead>
             <tbody>
               {orders.map((o) => (
-                <tr key={o.id} className="border-t border-slate-100 transition hover:bg-slate-50">
+                <tr
+                  key={o.id}
+                  onClick={() => navigate(`/orders/${o.id}`)}
+                  className="cursor-pointer border-t border-slate-100 transition hover:bg-brand-50"
+                  title="View order detail"
+                >
                   <td className="thulir-td">
                     <span className="flex items-center gap-1.5 font-mono text-[12px] font-semibold text-brand-700">
                       {o.id.slice(0, 8).toUpperCase()}

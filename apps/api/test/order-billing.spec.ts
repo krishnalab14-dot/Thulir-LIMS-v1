@@ -54,6 +54,8 @@ describe('order billing validation (server-side)', () => {
       masterTestPackage: { findMany: jest.Mock };
       party: { findFirst: jest.Mock };
       order: { create: jest.Mock; findFirst: jest.Mock };
+      orderTest: { create: jest.Mock };
+      sample: { create: jest.Mock };
       invoice: { create: jest.Mock; update: jest.Mock };
       payment: { create: jest.Mock };
       $queryRaw: jest.Mock;
@@ -69,6 +71,12 @@ describe('order billing validation (server-side)', () => {
         order: {
           create: jest.fn().mockImplementation(async ({ data }: { data: Record<string, unknown> }) => ({ id: 'ord1', ...data })),
           findFirst: jest.fn().mockResolvedValue({ id: 'ord1', patient: {}, orderTests: [], invoice: { payments: [] } }),
+        },
+        orderTest: {
+          create: jest.fn().mockImplementation(async ({ data }: { data: Record<string, unknown> }) => ({ id: 'ot1', ...data })),
+        },
+        sample: {
+          create: jest.fn().mockImplementation(async ({ data }: { data: Record<string, unknown> }) => ({ id: 'smp1', ...data })),
         },
         invoice: { create: jest.fn().mockResolvedValue({ id: 'inv1' }), update: jest.fn() },
         payment: { create: jest.fn().mockResolvedValue({ id: 'pay1' }) },
@@ -105,10 +113,14 @@ describe('order billing validation (server-side)', () => {
       expect(orderData.subtotal.toString()).toBe('550');
       expect(orderData.discountPercent.toString()).toBe('10');
       expect(orderData.totalAmount.toString()).toBe('495');
-      expect(orderData.orderTests.create).toHaveLength(2);
-      expect(orderData.orderTests.create[0]).toEqual(
+      // OrderTest rows are created individually after the Order (Stage 2: the
+      // order transaction also creates one Sample per distinct tube type).
+      const otRows = (tx.orderTest.create as jest.Mock).mock.calls.map((c: unknown[]) => (c[0] as { data: unknown }).data);
+      expect(otRows).toHaveLength(2);
+      expect(otRows[0]).toEqual(
         expect.objectContaining({ testId: 't_cbc', testNameSnapshot: 'Test t_cbc', snapshottedPrice: decimal(400) }),
       );
+      expect(tx.sample.create).not.toHaveBeenCalled(); // catalog rows have no required sample type
 
       const invoiceData = (tx.invoice.create as jest.Mock).mock.calls[0][0].data;
       expect(invoiceData.totalAmount.toString()).toBe('495');
@@ -182,9 +194,11 @@ describe('order billing validation (server-side)', () => {
       expect(orderData.subtotal.toString()).toBe('900');
       expect(orderData.totalAmount.toString()).toBe('900');
 
-      // One OrderTest row per constituent (needed for Stage 2 Result Entry),
-      // with prices distributed proportionally: 900 × 700/1200 = 525, 375.
-      const rows = orderData.orderTests.create as { testId: string; snapshottedPrice: Prisma.Decimal }[];
+      // One OrderTest row per constituent (needed for Result Entry), with
+      // prices distributed proportionally: 900 × 700/1200 = 525, 375.
+      const rows = (tx.orderTest.create as jest.Mock).mock.calls.map(
+        (c: unknown[]) => (c[0] as { data: { testId: string; snapshottedPrice: Prisma.Decimal } }).data,
+      );
       expect(rows).toHaveLength(2);
       expect(rows.find((r) => r.testId === 't_a')?.snapshottedPrice.toString()).toBe('525');
       expect(rows.find((r) => r.testId === 't_b')?.snapshottedPrice.toString()).toBe('375');
@@ -205,7 +219,7 @@ describe('order billing validation (server-side)', () => {
 
       const orderData = (tx.order.create as jest.Mock).mock.calls[0][0].data;
       expect(orderData.subtotal.toString()).toBe('1300'); // 400 standalone + 900 package
-      expect(orderData.orderTests.create).toHaveLength(3);
+      expect((tx.orderTest.create as jest.Mock).mock.calls).toHaveLength(3);
     });
 
     it('bills a single-test package at its own price, not the test price', async () => {
@@ -219,8 +233,11 @@ describe('order billing validation (server-side)', () => {
 
       const orderData = (tx.order.create as jest.Mock).mock.calls[0][0].data;
       expect(orderData.subtotal.toString()).toBe('300');
-      expect(orderData.orderTests.create).toHaveLength(1);
-      expect(orderData.orderTests.create[0].snapshottedPrice.toString()).toBe('300');
+      const rows = (tx.orderTest.create as jest.Mock).mock.calls.map(
+        (c: unknown[]) => (c[0] as { data: { snapshottedPrice: Prisma.Decimal } }).data,
+      );
+      expect(rows).toHaveLength(1);
+      expect(rows[0].snapshottedPrice.toString()).toBe('300');
     });
 
     it('rejects a test ordered both standalone and inside a package (overlap prevention)', async () => {
@@ -268,7 +285,7 @@ describe('order billing validation (server-side)', () => {
 
       const orderData = (tx.order.create as jest.Mock).mock.calls[0][0].data;
       expect(orderData.subtotal.toString()).toBe('1300'); // 400 standalone + 900 package
-      expect(orderData.orderTests.create).toHaveLength(3);
+      expect((tx.orderTest.create as jest.Mock).mock.calls).toHaveLength(3);
     });
   });
 });

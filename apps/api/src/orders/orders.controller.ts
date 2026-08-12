@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Post, Query } from '@nestjs/common';
+import { Body, Controller, Get, Param, Post, Query } from '@nestjs/common';
 import { Type } from 'class-transformer';
 import { IsInt, IsOptional, Max, Min } from 'class-validator';
 import { CreateOrderDto } from './dto/create-order.dto';
@@ -25,5 +25,10 @@ export class OrdersController {
   @Get()
   list(@Query() query: ListOrdersQueryDto) {
     return this.orders.listOrders(query.limit ?? 50);
+  }
+
+  @Get(':id')
+  detail(@Param('id') id: string) {
+    return this.orders.getOrderDetail(id);
   }
 }

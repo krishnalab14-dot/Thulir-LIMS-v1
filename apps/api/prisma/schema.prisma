@@ -68,6 +68,21 @@ enum PaymentMode {
   insurance
 }
 
+enum SampleStatus {
+  pending_collection
+  collected
+  rejected
+}
+
+enum RejectionReason {
+  hemolyzed
+  clotted
+  insufficient_quantity
+  mislabeled
+  container_leaked
+  other
+}
+
 // ---------------------------------------------------------------------------
 // Models
 // ---------------------------------------------------------------------------
@@ -87,6 +102,7 @@ model Organization {
   orderTests  OrderTest[]
   invoices    Invoice[]
   payments    Payment[]
+  samples     Sample[]
 }
 
 model User {
@@ -132,9 +148,11 @@ model SampleType {
   organizationId String
   organization   Organization @relation(fields: [organizationId], references: [id])
   name           String // e.g. "EDTA Blood", "Serum", "Urine"
+  code           String? // short tube code used in sample barcodes, e.g. "EDTA", "SER"
   active         Boolean      @default(true)
 
-  tests MasterTest[]
+  tests   MasterTest[]
+  samples Sample[]
 
   @@index([organizationId])
 }
@@ -215,6 +233,7 @@ model Order {
   createdAt        DateTime     @default(now())
 
   orderTests OrderTest[]
+  samples    Sample[]
   invoice    Invoice?
 
   @@index([organizationId])
@@ -235,9 +254,12 @@ model OrderTest {
   testNameSnapshot String
   snapshottedPrice Decimal        @db.Decimal(12, 2)
   status           OrderTestStatus @default(pending)
+  sampleId         String?
+  sample           Sample?        @relation(fields: [sampleId], references: [id])
 
   @@index([organizationId])
   @@index([orderId])
+  @@index([sampleId])
 }
 
 model Invoice {
@@ -281,6 +303,39 @@ model PaymentSplit {
   amount    Decimal     @db.Decimal(12, 2)
 
   @@index([paymentId])
+}
+
+// One Sample per distinct required sample type among an order's tests.
+// Barcode is deterministic (order-id prefix + sampleType code, -R2/-R3… on
+// recollection), generated inside the order transaction. Rejections keep the
+// rejected row for audit and auto-create a recollection linked via
+// recollectionOfSampleId.
+model Sample {
+  id                     String           @id @default(cuid())
+  organizationId         String
+  organization           Organization     @relation(fields: [organizationId], references: [id])
+  orderId                String
+  order                  Order            @relation(fields: [orderId], references: [id])
+  sampleTypeId           String
+  sampleType             SampleType       @relation(fields: [sampleTypeId], references: [id])
+  barcodeValue           String           @unique
+  status                 SampleStatus     @default(pending_collection)
+  collectedBy            String?
+  collectedAt            DateTime?
+  rejectedReason         RejectionReason?
+  rejectedReasonNote     String?
+  rejectedBy             String?
+  rejectedAt             DateTime?
+  recollectionOfSampleId String?
+  recollectionOf         Sample?          @relation("SampleRecollection", fields: [recollectionOfSampleId], references: [id])
+  recollections          Sample[]         @relation("SampleRecollection")
+  orderTests             OrderTest[]
+  createdAt              DateTime         @default(now())
+
+  @@index([organizationId])
+  @@index([orderId])
+  @@index([status])
+  @@index([recollectionOfSampleId])
 }
 
 // Internal counter table backing org-scoped, year-scoped sequential patientUid

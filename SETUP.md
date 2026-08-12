@@ -314,3 +314,29 @@ Why it cannot fail silently: `patientUid` uses a single atomic `INSERT … ON CO
 Result: **2/2 concurrency tests pass against real PostgreSQL 18.4** (part of `npm run verify:real-db`, now 11 integration tests; also runs in CI's real-db job). Full suite after this pass: integration 11/11 ✓ · unit 54/54 ✓ · typecheck ✓ · lint ✓. The Stage 1 gate is cleared — ready for the Stage 2 (Sample Collection) spec.
 
 **CI pool fix (this pass):** on GitHub Actions' 2-core runner, Prisma's default pool (`num_cpus * 2 + 1`) is only ~5 — the 20-request burst then trips **P2028** ("Unable to start a transaction in the given time", Prisma's 2s transaction-start `maxWait`) and the concurrency spec fails. `verify-real-db.ts` now appends `connection_limit=25` to the URL it builds so the burst always has headroom (embedded Postgres' default `max_connections` is 100). This only affects the verification harness; production deployments size their own pool via their real `DATABASE_URL`.
+
+## 19. Stage 2 — Sample Collection (build record, review before Stage 3)
+
+### 19.1 Schema
+Migration `20260812000000_add_sample_collection`: `Sample` model (org-scoped, barcode `@unique`, status `pending_collection/collected/rejected`, collect + reject actor/timestamp columns, `recollectionOfSampleId` self-relation), `SampleStatus`/`RejectionReason` enums, `OrderTest.sampleId` (nullable FK → Sample), `SampleType.code` (nullable; barcode falls back to a name-derived code). `Sample` is in the tenant-scoping allowlist in the same commit.
+
+### 19.2 Order transaction extension
+`POST /api/orders` now creates **one Sample per distinct required sample type** among the ordered tests (CBC + LFT sharing a tube → one Sample), all `pending_collection`, and links every `OrderTest` to its Sample. Barcodes are deterministic (`<order.id uppercased>-<sampleType.code>`), generated inside the order transaction.
+
+> **Bug found by the Stage 1 concurrency test (fixed):** the barcode originally used `order.id.slice(0, 8)` as the "short form", but cuid v2's first 8 characters encode the creation timestamp — under the 20-parallel-order burst, same-millisecond orders shared that prefix and 3 orders 500'd on the `barcodeValue` unique constraint. The barcode now uses the **full order id** (unique by construction), so barcodes are unique by construction; the DB constraint remains as the safety net.
+
+### 19.3 Endpoints
+- `GET /api/samples/pending` — pending_collection samples, oldest-first, joined with patient/order/urgency/sample-type for the worklist
+- `PUT /api/samples/:id/collect` — **conditional update** (`WHERE id AND status = pending_collection`); zero rows affected → **409** (never a silent success or generic error). Sets `collectedBy` (`SYSTEM_USER_ID` until auth) + `collectedAt`
+- `PUT /api/samples/:id/reject` — one transaction: conditional update → rejected (409 if not pending) → auto-create recollection (`-R2`/`-R3`… suffix, `recollectionOfSampleId` → rejected row) → re-link the affected `OrderTest` rows to the recollection. **Never touches Order/Invoice/Payment** (verified in the e2e). `note` required server-side when `reason = other` (400 otherwise)
+- `GET /api/samples/:id` — full lifecycle + recollection **chain** (root → latest, both-direction walk; strictly linear because a rejected sample can't be rejected again)
+- `GET /api/samples/:id/label` — printable label data (barcode, patient, sample type, order, lab name)
+- `GET /api/orders/:id` — minimal order detail incl. a `samples` section (Stage 2 addition)
+
+### 19.4 Frontend
+`/collection` (Collection Worklist — scan-or-type barcode input that resolves on Enter, per-row Collect/Reject, reject dialog with the 6 fixed reasons + conditional note, recollection banner after reject so the new label is never silently hidden), `/samples/:id` (Sample Detail — lifecycle, ordered tests, recollection chain, Print Label via the existing `.print-area` print stylesheet), `/orders/:id` (Order Detail with a Samples section). Orders rows link to the detail page.
+
+### 19.5 Concurrency + real-DB verification (all green)
+New `test-e2e/samples.e2e-real-db.spec.ts` (9 tests, runs in `verify:real-db` + CI): order→samples creation (2 tube types → 2 Samples, deterministic barcodes, OrderTest links), worklist contents/ordering, collect with actor/timestamp + removal from worklist, **double-collect race (Promise.all) → exactly one 200 + one 409** with a single `collectedAt`, reject `other`-without-note → 400, reject → recollection `-R2` + re-link + billing untouched, reject again → `-R3` + 3-level chain visible from both the original and the middle node, label endpoint, and fail-closed tenant scoping on `Sample` (no context throws; cross-tenant collect attempt is a safe 409, no mutation).
+
+Full suite after Stage 2: **integration 21/21** (concurrency 2 + orders 9 + samples 10) · **unit 58/58** (incl. 4 barcode-util tests) · typecheck ✓ · lint 0 ✓ · build (api + web) ✓ · `verify:real-db` end-to-end ✓ · CI green.

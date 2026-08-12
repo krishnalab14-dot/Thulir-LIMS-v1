@@ -1,8 +1,8 @@
 # Thulir LIMS v1
 
-A multi-tenant Laboratory Information Management System (LIMS). **Stage 1** covers **Patient Registration → Test/Package Order → Billing**; sample collection, result entry, verification, approval, reporting, inventory, analytics and the full Test Master are later stages.
+A multi-tenant Laboratory Information Management System (LIMS). **Stage 1** covers **Patient Registration → Test/Package Order → Billing**; **Stage 2** adds **Sample Collection** (worklist, collect/reject with auto-recollection, printable labels). Result entry, verification, approval, reporting, inventory, analytics and the full Test Master are later stages.
 
-> Full Stage 1 spec, done-criteria and architectural rules: see **[SETUP.md](./SETUP.md)**.
+> Full spec, done-criteria and architectural rules: see **[SETUP.md](./SETUP.md)**.
 
 ## Tech Stack
 
