@@ -29,7 +29,8 @@ interface ResolvedLineItem {
   // Stage 2.5 result fields — used to resolve + snapshot the reference range
   // (and options/critical thresholds) at order time. Stage 3: the abnormal-
   // options parallel array is snapshotted too, so Result Entry can flag
-  // qualitative results without ever re-reading MasterTest live.
+  // qualitative results without ever re-reading MasterTest live. Stage 3
+  // follow-up: unit is snapshotted alongside the rest.
   resultType: ResultType;
   resultOptions: string[];
   resultOptionsAbnormal: string[];
@@ -37,6 +38,7 @@ interface ResolvedLineItem {
   defaultRefHigh: number | null;
   criticalLow: number | null;
   criticalHigh: number | null;
+  unit: string | null;
 }
 
 @Injectable()
@@ -228,6 +230,7 @@ export class OrdersService {
             snapshottedRefHigh: range?.refHigh ?? null,
             snapshottedCriticalLow: t.criticalLow,
             snapshottedCriticalHigh: t.criticalHigh,
+            snapshottedUnit: t.unit,
           },
         });
       }
@@ -465,6 +468,7 @@ export class OrdersService {
             defaultRefHigh: item?.defaultRefHigh ?? null,
             criticalLow: item?.criticalLow ?? null,
             criticalHigh: item?.criticalHigh ?? null,
+            unit: item?.unit ?? null,
           });
         }
       }
@@ -488,6 +492,7 @@ export class OrdersService {
     defaultRefHigh: number | null;
     criticalLow: number | null;
     criticalHigh: number | null;
+    unit?: string | null;
     requiredSampleType?: { code: string | null; name: string } | null;
   }): ResolvedLineItem {
     return {
@@ -505,6 +510,7 @@ export class OrdersService {
       defaultRefHigh: row.defaultRefHigh,
       criticalLow: row.criticalLow,
       criticalHigh: row.criticalHigh,
+      unit: row.unit ?? null,
     };
   }
 }

@@ -1,6 +1,6 @@
 # Thulir LIMS v1
 
-A multi-tenant Laboratory Information Management System (LIMS). **Stage 1** covers **Patient Registration → Test/Package Order → Billing**; **Stage 2** adds **Sample Collection** (worklist, collect/reject with auto-recollection, printable labels); **Stage 2.5** extends the Test Master with the result model (numeric/options/text types, age/sex reference ranges, critical thresholds, abnormal-option classification) that Result Entry consumes; **Stage 3** adds **Result Entry** — a keyboard-first grid grouped by sample, validating every value against its order-time snapshots, with abnormal/critical visual flagging, a concurrency-safe compare-and-swap save, and the order-status rollup cascade. Verification, approval, reporting, inventory and analytics are later stages.
+A multi-tenant Laboratory Information Management System (LIMS). **Stage 1** covers **Patient Registration → Test/Package Order → Billing**; **Stage 2** adds **Sample Collection** (worklist, collect/reject with auto-recollection, printable labels); **Stage 2.5** extends the Test Master with the result model (numeric/options/text types, age/sex reference ranges, critical thresholds, abnormal-option classification) that Result Entry consumes; **Stage 3** adds **Result Entry** — a keyboard-first grid grouped by sample, validating every value against its order-time snapshots, with abnormal/critical visual flagging, a concurrency-safe compare-and-swap save, the order-status rollup cascade, and per-test display units (snapshotted at order time alongside price/range). Verification, approval, reporting, inventory and analytics are later stages.
 
 > Full spec, done-criteria and architectural rules: see **[SETUP.md](./SETUP.md)**.
 
@@ -79,7 +79,7 @@ Secrets are managed via the Freebuff Keys UI in hosted environments; never commi
 ## Key Stage 1 Rules (summary)
 
 - **Server-side pricing** — the order payload carries no prices; `forbidNonWhitelisted` rejects any stray price field, and client-sent `subtotal`/`total` are cross-checked and rejected on mismatch.
-- **Snapshot principle** — `OrderTest` stores `snapshottedPrice`/`testNameSnapshot` at order time; never re-read live afterwards.
+- **Snapshot principle** — `OrderTest` stores `snapshottedPrice`/`testNameSnapshot`/`snapshottedUnit` (and the Stage 2.5 result snapshots) at order time; never re-read live afterwards.
 - **Fail-closed multi-tenancy** — a Prisma extension throws on any tenant-scoped query without a tenant context; the HTTP layer runs requests under the `x-organization-id` header or `DEFAULT_ORG_ID`.
 - **Derived rollups** — `Order.status` is computed from `OrderTest` statuses (all new orders start `billed`).
 - **Exact split validation** — payment splits must sum exactly to the amount being paid.

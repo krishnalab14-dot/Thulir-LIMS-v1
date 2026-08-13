@@ -68,6 +68,12 @@ export class CreateTestDto {
 
   // --- Stage 2.5 Test Master extension ---
 
+  /** Display unit for numeric results (mg/dL, g/dL, %, …) — free text, nullable. */
+  @IsOptional()
+  @IsString()
+  @MaxLength(50)
+  unit?: string;
+
   @IsOptional()
   @IsIn(Object.values(ResultType))
   resultType?: ResultType;

@@ -205,6 +205,12 @@ model MasterTest {
   defaultRefHigh Float?
   criticalLow    Float?
   criticalHigh   Float?
+  // Stage 3 follow-up: display unit for numeric results (mg/dL, g/dL, %, …).
+  // Free text, nullable — options/text-type tests often don't need one. It is
+  // snapshotted onto OrderTest.snapshottedUnit at order time (same
+  // non-negotiable snapshot principle as price/range) and only ever read
+  // from the snapshot afterwards.
+  unit           String?
 
   specifications TestSpecification[]
   packageItems   MasterTestPackageItem[]
@@ -332,6 +338,9 @@ model OrderTest {
   snapshottedRefHigh        Float?
   snapshottedCriticalLow    Float?
   snapshottedCriticalHigh   Float?
+  // Stage 3 follow-up: unit copied from MasterTest.unit at order time — the
+  // same snapshot principle as price/range; never re-read live afterwards.
+  snapshottedUnit            String?
 
   // Stage 3 result capture: resultValue is interpreted per
   // snapshottedResultType (numeric → numeric string, options → one of the

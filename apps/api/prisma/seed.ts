@@ -42,21 +42,21 @@ async function main() {
   // catalog now spans all three ResultType values).
   await prisma.masterTest.createMany({
     data: [
-      { id: 't_cbc', organizationId: ORG_ID, testCode: 'CBC', testName: 'Complete Blood Count', currentPrice: 400, requiredSampleTypeId: 'st_edta', defaultRefLow: 4000, defaultRefHigh: 11000, criticalLow: 1000, criticalHigh: 30000 },
-      { id: 't_esr', organizationId: ORG_ID, testCode: 'ESR', testName: 'Erythrocyte Sedimentation Rate', currentPrice: 250, requiredSampleTypeId: 'st_edta', defaultRefLow: 0, defaultRefHigh: 20 },
+      { id: 't_cbc', organizationId: ORG_ID, testCode: 'CBC', testName: 'Complete Blood Count', currentPrice: 400, requiredSampleTypeId: 'st_edta', defaultRefLow: 4000, defaultRefHigh: 11000, criticalLow: 1000, criticalHigh: 30000, unit: 'cells/mcL' },
+      { id: 't_esr', organizationId: ORG_ID, testCode: 'ESR', testName: 'Erythrocyte Sedimentation Rate', currentPrice: 250, requiredSampleTypeId: 'st_edta', defaultRefLow: 0, defaultRefHigh: 20, unit: 'mm/hr' },
       { id: 't_bloodgroup', organizationId: ORG_ID, testCode: 'BG', testName: 'Blood Group & Rh Typing', currentPrice: 150, requiredSampleTypeId: 'st_edta', resultType: 'options', resultOptions: ['A+', 'A-', 'B+', 'B-', 'AB+', 'AB-', 'O+', 'O-'] },
-      { id: 't_fbs', organizationId: ORG_ID, testCode: 'FBS', testName: 'Fasting Blood Sugar', currentPrice: 150, requiredSampleTypeId: 'st_serum', defaultRefLow: 70, defaultRefHigh: 99, criticalLow: 40, criticalHigh: 400 },
+      { id: 't_fbs', organizationId: ORG_ID, testCode: 'FBS', testName: 'Fasting Blood Sugar', currentPrice: 150, requiredSampleTypeId: 'st_serum', defaultRefLow: 70, defaultRefHigh: 99, criticalLow: 40, criticalHigh: 400, unit: 'mg/dL' },
       // Stage 2.1: HbA1c gets its own dedicated tube even when ordered alongside
       // other EDTA tests (contamination-sensitive assay).
-      { id: 't_hba1c', organizationId: ORG_ID, testCode: 'HBA1C', testName: 'Glycated Haemoglobin (HbA1c)', currentPrice: 600, requiredSampleTypeId: 'st_edta', requiresDedicatedSample: true, defaultRefLow: 4, defaultRefHigh: 5.6, criticalLow: 3, criticalHigh: 15 },
-      { id: 't_lipid', organizationId: ORG_ID, testCode: 'LIPID', testName: 'Lipid Profile', currentPrice: 800, requiredSampleTypeId: 'st_serum', defaultRefLow: 0, defaultRefHigh: 200 },
+      { id: 't_hba1c', organizationId: ORG_ID, testCode: 'HBA1C', testName: 'Glycated Haemoglobin (HbA1c)', currentPrice: 600, requiredSampleTypeId: 'st_edta', requiresDedicatedSample: true, defaultRefLow: 4, defaultRefHigh: 5.6, criticalLow: 3, criticalHigh: 15, unit: '%' },
+      { id: 't_lipid', organizationId: ORG_ID, testCode: 'LIPID', testName: 'Lipid Profile', currentPrice: 800, requiredSampleTypeId: 'st_serum', defaultRefLow: 0, defaultRefHigh: 200, unit: 'mg/dL' },
       // Stage 2.1: TSH also demands a dedicated serum tube (lab protocol).
-      { id: 't_tsh', organizationId: ORG_ID, testCode: 'TSH', testName: 'Thyroid Stimulating Hormone', currentPrice: 350, requiredSampleTypeId: 'st_serum', requiresDedicatedSample: true, defaultRefLow: 0.4, defaultRefHigh: 4.5, criticalLow: 0.1, criticalHigh: 50 },
-      { id: 't_lft', organizationId: ORG_ID, testCode: 'LFT', testName: 'Liver Function Test', currentPrice: 700, requiredSampleTypeId: 'st_serum', defaultRefLow: 0, defaultRefHigh: 40 },
-      { id: 't_kft', organizationId: ORG_ID, testCode: 'KFT', testName: 'Kidney Function Test', currentPrice: 650, requiredSampleTypeId: 'st_serum', defaultRefLow: 0, defaultRefHigh: 1.2 },
+      { id: 't_tsh', organizationId: ORG_ID, testCode: 'TSH', testName: 'Thyroid Stimulating Hormone', currentPrice: 350, requiredSampleTypeId: 'st_serum', requiresDedicatedSample: true, defaultRefLow: 0.4, defaultRefHigh: 4.5, criticalLow: 0.1, criticalHigh: 50, unit: 'mIU/L' },
+      { id: 't_lft', organizationId: ORG_ID, testCode: 'LFT', testName: 'Liver Function Test', currentPrice: 700, requiredSampleTypeId: 'st_serum', defaultRefLow: 0, defaultRefHigh: 40, unit: 'U/L' },
+      { id: 't_kft', organizationId: ORG_ID, testCode: 'KFT', testName: 'Kidney Function Test', currentPrice: 650, requiredSampleTypeId: 'st_serum', defaultRefLow: 0, defaultRefHigh: 1.2, unit: 'mg/dL' },
       { id: 't_urine', organizationId: ORG_ID, testCode: 'URT', testName: 'Urine Routine & Microscopy', currentPrice: 200, requiredSampleTypeId: 'st_urine', resultType: 'text' },
-      { id: 't_vitd', organizationId: ORG_ID, testCode: 'VITD', testName: 'Vitamin D (25-OH)', currentPrice: 1200, requiredSampleTypeId: 'st_serum', defaultRefLow: 30, defaultRefHigh: 100, criticalLow: 10, criticalHigh: 200 },
-      { id: 't_crp', organizationId: ORG_ID, testCode: 'CRP', testName: 'C-Reactive Protein', currentPrice: 450, requiredSampleTypeId: 'st_serum', defaultRefLow: 0, defaultRefHigh: 5, criticalLow: 10, criticalHigh: 200 },
+      { id: 't_vitd', organizationId: ORG_ID, testCode: 'VITD', testName: 'Vitamin D (25-OH)', currentPrice: 1200, requiredSampleTypeId: 'st_serum', defaultRefLow: 30, defaultRefHigh: 100, criticalLow: 10, criticalHigh: 200, unit: 'ng/mL' },
+      { id: 't_crp', organizationId: ORG_ID, testCode: 'CRP', testName: 'C-Reactive Protein', currentPrice: 450, requiredSampleTypeId: 'st_serum', defaultRefLow: 0, defaultRefHigh: 5, criticalLow: 10, criticalHigh: 200, unit: 'mg/L' },
     ],
   });
   console.log('Seeded 12 tests (2 marked requiresDedicatedSample: HBA1C, TSH)');

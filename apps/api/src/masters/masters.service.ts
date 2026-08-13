@@ -137,6 +137,7 @@ export class MastersService {
         requiredSampleTypeId: dto.requiredSampleTypeId ?? null,
         requiresDedicatedSample: dto.requiresDedicatedSample ?? false,
         resultType,
+        unit: dto.unit?.trim() || null,
         resultOptions: resultType === ResultType.options ? (dto.resultOptions ?? []) : [],
         resultOptionsAbnormal: resultType === ResultType.options ? resultOptionsAbnormal : [],
         defaultRefLow: dto.defaultRefLow ?? null,

@@ -11,6 +11,7 @@ interface TestRow {
   active: boolean;
   requiresDedicatedSample: boolean;
   resultType: 'numeric' | 'options' | 'text';
+  unit?: string | null;
   resultOptions?: string[];
   resultOptionsAbnormal?: string[];
   requiredSampleType: { id: string; name: string } | null;
@@ -60,6 +61,7 @@ export function MastersTests() {
     requiredSampleTypeId: '',
     requiresDedicatedSample: false,
     resultType: 'numeric' as ResultType,
+    unit: '',
     defaultRefLow: '',
     defaultRefHigh: '',
     criticalLow: '',
@@ -96,6 +98,7 @@ export function MastersTests() {
       requiredSampleTypeId: '',
       requiresDedicatedSample: false,
       resultType: 'numeric',
+      unit: '',
       defaultRefLow: '',
       defaultRefHigh: '',
       criticalLow: '',
@@ -146,6 +149,7 @@ export function MastersTests() {
         requiredSampleTypeId: form.requiredSampleTypeId || undefined,
         requiresDedicatedSample: form.requiresDedicatedSample,
         resultType: form.resultType,
+        ...(form.unit.trim() ? { unit: form.unit.trim() } : {}),
         ...(form.resultType === 'options'
           ? { resultOptions: form.resultOptions, resultOptionsAbnormal: form.resultOptionsAbnormal }
           : {}),
@@ -252,6 +256,11 @@ export function MastersTests() {
                   </option>
                 ))}
               </Select>
+            </Field>
+
+            <Field label="Unit">
+              <TextInput value={form.unit} onChange={(e) => setForm((f) => ({ ...f, unit: e.target.value }))} placeholder="e.g. mg/dL, g/dL, %" className="font-mono" />
+              <p className="mt-1 text-[11px] text-slate-400">Shown next to the result at Result Entry. Leave blank when the test has no unit (options/text types usually don't).</p>
             </Field>
 
             {form.resultType === 'numeric' && (
@@ -406,6 +415,7 @@ export function MastersTests() {
                       <td className="thulir-td font-mono text-[12px] font-semibold text-brand-700">{t.testCode}</td>
                       <td className="thulir-td text-[13px]">
                         {t.testName}
+                        {t.unit && <span className="ml-1.5 text-[11px] font-normal text-slate-400">{t.unit}</span>}
                         {(t.specifications?.length ?? 0) > 0 && (
                           <span className="ml-1.5 text-[11px] text-slate-400">{t.specifications!.length} age/sex spec{(t.specifications!.length ?? 0) === 1 ? '' : 's'}</span>
                         )}

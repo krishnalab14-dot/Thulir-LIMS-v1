@@ -76,6 +76,8 @@ describe('Stage 3 real-DB verification — result entry', () => {
         defaultRefHigh: 99,
         criticalLow: 40,
         criticalHigh: 400,
+        // Stage 3 follow-up: unit snapshots onto OrderTest.snapshottedUnit.
+        unit: 'mg/dL',
       });
     const opt = await http()
       .post('/api/masters/tests')
@@ -182,6 +184,9 @@ describe('Stage 3 real-DB verification — result entry', () => {
     expect(row.abnormalOptions).toEqual(['B+']);
     expect(row.resultValue).toBeNull();
     expect(row.status).toBe('pending');
+    // Options-type test was created WITHOUT a unit → payload carries null,
+    // never "undefined" (the grid renders a dash).
+    expect(row.unit).toBeNull();
 
     expect(res.body.summary).toEqual({ total: 1, entered: 0 });
     expect(res.body.patient.ageYears).toBeGreaterThan(30);
@@ -192,7 +197,7 @@ describe('Stage 3 real-DB verification — result entry', () => {
     await http().put(`/api/samples/${serumSampleId}/collect`).set('x-organization-id', ORG);
     const res = await http().get(`/api/orders/${order1Id}/results`).set('x-organization-id', ORG);
     expect(res.status).toBe(200);
-    const samples = res.body.samples as Array<{ id: string; orderTests: Array<{ id: string; resultType: string; refLow: number | null; refHigh: number | null; criticalLow: number | null; criticalHigh: number | null }> }>;
+    const samples = res.body.samples as Array<{ id: string; orderTests: Array<{ id: string; resultType: string; unit: string | null; refLow: number | null; refHigh: number | null; criticalLow: number | null; criticalHigh: number | null }> }>;
     expect(samples).toHaveLength(2);
     const serum = samples.find((s) => s.id === serumSampleId)!;
     expect(serum.orderTests.map((t) => t.id).sort()).toEqual([otNumeric, otText].sort());
@@ -201,6 +206,11 @@ describe('Stage 3 real-DB verification — result entry', () => {
     expect(numeric.refHigh).toBe(99);
     expect(numeric.criticalLow).toBe(40);
     expect(numeric.criticalHigh).toBe(400);
+    // Stage 3 follow-up: the unit set in Masters is snapshotted onto the
+    // OrderTest row and surfaced by GET /results.
+    expect(numeric.unit).toBe('mg/dL');
+    const textRow = serum.orderTests.find((t) => t.id === otText)!;
+    expect(textRow.unit).toBeNull(); // created without a unit → null
     expect(res.body.summary).toEqual({ total: 3, entered: 0 });
   });
 
@@ -223,6 +233,8 @@ describe('Stage 3 real-DB verification — result entry', () => {
     expect(row!.status).toBe('entered');
     expect(row!.enteredBy).toBe(SYSTEM_USER_ID);
     expect(row!.enteredAt!.getTime()).toBeGreaterThanOrEqual(before.getTime());
+    // Stage 3 follow-up: snapshottedUnit persisted at order time.
+    expect(row!.snapshottedUnit).toBe('mg/dL');
 
     const order = await plain.order.findUnique({ where: { id: order1Id } });
     expect(order!.status).toBe('entered');
@@ -280,6 +292,9 @@ describe('Stage 3 real-DB verification — result entry', () => {
 
     const row = await plain.orderTest.findUnique({ where: { id: otOptions } });
     expect(row!.resultValue).toBe('A+'); // untouched by the rejected write
+    // Options-type test created WITHOUT a unit — order + entry work fine, the
+    // snapshot is simply null (unit is a purely additive nullable field).
+    expect(row!.snapshottedUnit).toBeNull();
   });
 
   it('empty text is "not yet entered" — never advances status; clearing a value reverts to pending', async () => {

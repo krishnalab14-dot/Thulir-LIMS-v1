@@ -10,6 +10,7 @@ interface ResultRow {
   testNameSnapshot: string;
   status: string;
   resultType: 'numeric' | 'options' | 'text';
+  unit: string | null;
   resultOptions: string[];
   abnormalOptions: string[];
   refLow: number | null;
@@ -305,9 +306,10 @@ export function ResultEntry() {
             </button>
           </div>
         </div>
-        <div className="mt-2 grid grid-cols-[minmax(0,1.2fr)_minmax(0,1fr)_auto_auto] items-center gap-3 border-t border-slate-200 pt-2 text-[11px] font-semibold uppercase tracking-wide text-slate-500">
+        <div className="mt-2 grid grid-cols-[minmax(0,1.2fr)_minmax(0,1fr)_auto_auto_auto] items-center gap-3 border-t border-slate-200 pt-2 text-[11px] font-semibold uppercase tracking-wide text-slate-500">
           <span>Test Name</span>
           <span>Result</span>
+          <span>Unit</span>
           <span>Reference Range</span>
           <span className="pr-1 text-right">Status</span>
         </div>
@@ -350,7 +352,7 @@ export function ResultEntry() {
                 const isText = row.resultType === 'text';
                 const isOptions = row.resultType === 'options';
                 return (
-                  <li key={row.id} className="grid grid-cols-[minmax(0,1.2fr)_minmax(0,1fr)_auto_auto] items-center gap-3 px-4 py-2">
+                  <li key={row.id} className="grid grid-cols-[minmax(0,1.2fr)_minmax(0,1fr)_auto_auto_auto] items-center gap-3 px-4 py-2">
                     <div>
                       <span className="block text-[13px] font-medium text-slate-800">{row.testNameSnapshot}</span>
                       {isOptions && (
@@ -467,6 +469,8 @@ export function ResultEntry() {
                       )}
                       {fieldErrors[row.id] && <p className="mt-1 text-[11px] text-rose-600">{fieldErrors[row.id]}</p>}
                     </div>
+
+                    <div className="min-w-[70px] text-[12px] text-slate-500">{row.unit ?? '—'}</div>
 
                     <div className="min-w-[90px] text-[12px] text-slate-500">
                       {row.resultType === 'numeric' && row.refLow != null && row.refHigh != null && (
