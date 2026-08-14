@@ -21,6 +21,7 @@ const MENUS: MenuDef[] = [
       { label: 'Sample Collection', to: '/collection' },
       { label: 'Result Entry', to: '/orders', hint: 'pick an order' },
       { label: 'Verification', to: '/verify' },
+      { label: 'Approval', to: '/approvals' },
       { label: 'Orders', to: '/orders' },
     ],
   },
@@ -126,7 +127,7 @@ export function NavBar() {
           </span>
           <span className="leading-tight">
             <span className="block text-sm font-bold tracking-tight text-white">Thulir LIMS</span>
-            <span className="block text-[10px] font-medium uppercase tracking-wider text-brand-300">v2 · Stage 4</span>
+            <span className="block text-[10px] font-medium uppercase tracking-wider text-brand-300">v2 · Stage 5</span>
           </span>
         </Link>
 

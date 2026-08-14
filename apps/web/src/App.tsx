@@ -1,4 +1,5 @@
 import { Navigate, Route, Routes } from 'react-router-dom';
+import { ApprovalQueue } from './pages/ApprovalQueue';
 import { NavBar } from './components/NavBar';
 import { CollectionWorklist } from './pages/CollectionWorklist';
 import { MastersTests } from './pages/MastersTests';
@@ -22,6 +23,7 @@ export function App() {
           <Route path="/orders/:id" element={<OrderDetail />} />
           <Route path="/orders/:id/results" element={<ResultEntry />} />
           <Route path="/verify" element={<VerifyQueue />} />
+          <Route path="/approvals" element={<ApprovalQueue />} />
           <Route path="/samples/:id" element={<SampleDetail />} />
           <Route path="/masters/tests" element={<MastersTests />} />
           <Route path="*" element={<Navigate to="/register" replace />} />

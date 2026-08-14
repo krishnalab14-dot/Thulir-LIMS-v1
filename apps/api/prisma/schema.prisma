@@ -365,6 +365,17 @@ model OrderTest {
   verifiedAt         DateTime?
   verifyRejectedNote String?
 
+  // Stage 5 approval — the verified → approved transition (and its reverse,
+  // approved/verified → entered on a pathologist reject-back). Per-test
+  // granularity, same as result entry and verification. approvedBy/approvedAt
+  // stamp the approve; approvalSignatureStamp is a deterministic recorded-
+  // event reference (hash of orderTestId + actor + timestamp + signature
+  // reference) — enough to prove THIS specific approval event happened for
+  // later Report rendering and audits, NOT a legal e-signature system.
+  approvedBy             String?
+  approvedAt             DateTime?
+  approvalSignatureStamp String?
+
   @@index([organizationId])
   @@index([orderId])
   @@index([sampleId])

@@ -1,5 +1,6 @@
 import { MiddlewareConsumer, Module, NestModule, RequestMethod } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
+import { ApprovalModule } from './approval/approval.module';
 import { InvoicesModule } from './invoices/invoices.module';
 import { MastersModule } from './masters/masters.module';
 import { OrdersModule } from './orders/orders.module';
@@ -23,6 +24,7 @@ import { VerifyModule } from './verify/verify.module';
     InvoicesModule,
     SamplesModule,
     VerifyModule,
+    ApprovalModule,
   ],
 })
 export class AppModule implements NestModule {
