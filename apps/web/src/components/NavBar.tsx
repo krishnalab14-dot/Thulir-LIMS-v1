@@ -127,7 +127,7 @@ export function NavBar() {
           </span>
           <span className="leading-tight">
             <span className="block text-sm font-bold tracking-tight text-white">Thulir LIMS</span>
-            <span className="block text-[10px] font-medium uppercase tracking-wider text-brand-300">v2 · Stage 5</span>
+            <span className="block text-[10px] font-medium uppercase tracking-wider text-brand-300">v2 · Stage 6</span>
           </span>
         </Link>
 

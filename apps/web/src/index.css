@@ -72,3 +72,43 @@
     padding: 24px;
   }
 }
+
+/* Stage 6 report — true A4 paper, no browser/nav chrome in the printout.
+ * .report-sheet is the ONLY visible element while printing (the same
+ * visibility pattern as .print-area above); the sheet is laid out at 210×297
+ * mm with the table header repeated across pages and rows kept intact. */
+@page {
+  size: A4 portrait;
+  margin: 0;
+}
+@media print {
+  body {
+    background: #fff !important;
+  }
+  .no-print {
+    display: none !important;
+  }
+  body * {
+    visibility: hidden;
+  }
+  .report-sheet,
+  .report-sheet * {
+    visibility: visible;
+  }
+  .report-sheet {
+    position: absolute;
+    left: 0;
+    top: 0;
+    width: 210mm !important;
+    min-height: 297mm !important;
+    margin: 0 !important;
+    border-radius: 0 !important;
+    box-shadow: none !important;
+  }
+  .report-sheet thead {
+    display: table-header-group;
+  }
+  .report-sheet tr {
+    break-inside: avoid;
+  }
+}

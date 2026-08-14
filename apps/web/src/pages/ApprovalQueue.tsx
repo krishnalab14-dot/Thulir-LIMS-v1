@@ -1,10 +1,10 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
+import { PseudoQr, ScaledSheet, type ReportSheetData } from '../components/ReportSheet';
 import { FlagNote } from '../components/ResultFlags';
 import { Badge, Card, EmptyState, Modal, Spinner } from '../components/ui';
 import { api, ApiError } from '../lib/api';
 import { formatDateTime, waitLabel } from '../lib/format';
-import { pseudoQrCells } from '../lib/pseudo-qr';
 import { flagCellClasses } from '../lib/result-flag-view';
 import { flagResult, ResultFlag } from '../lib/result-flags';
 
@@ -67,123 +67,32 @@ interface ApproveResponse {
 const GENDER_SHORT: Record<string, string> = { male: 'M', female: 'F', other: 'Other' };
 const STATUS_TONE: Record<string, string> = { pending: 'slate', entered: 'teal', verified: 'amber', approved: 'green' };
 
-/** The live A4 preview QR placeholder — deterministic grid from the seed. */
-function PseudoQr({ seed, className }: { seed: string; className?: string }) {
-  const cells = useMemo(() => pseudoQrCells(seed), [seed]);
-  return (
-    <div
-      className={`grid ${className ?? ''}`}
-      style={{ gridTemplateColumns: 'repeat(21, 1fr)' }}
-      aria-hidden
-    >
-      {cells.map((on, i) => (
-        <span key={i} className={on ? 'bg-slate-900' : 'bg-white'} />
-      ))}
-    </div>
-  );
-}
-
-/** Scaled-down rendering of the printed report — letterhead, patient/order
- *  header, results table, signature block and QR placeholder. Reflects the
- *  CURRENT approval state: approved rows are locked in (value shown + ✓),
- *  verified rows show the value pending approval, pending rows show a dash. */
-function A4Preview({ review }: { review: ReviewData }) {
+/** The shared A4 sheet fed by the approval review — scaled preview copy. */
+function PreviewSheet({ review }: { review: ReviewData }) {
   const rows = review.samples.flatMap((s) => s.orderTests);
-  const approvedRows = rows.filter((r) => r.status === 'approved');
-  const allApproved = review.summary.total > 0 && approvedRows.length === review.summary.total;
-  const firstStamp = approvedRows.find((r) => r.approvalSignatureStamp)?.approvalSignatureStamp ?? null;
+  const approved = rows.filter((r) => r.status === 'approved').length;
+  const allApproved = review.summary.total > 0 && approved === review.summary.total;
+  const firstStamp = rows.find((r) => r.approvalSignatureStamp)?.approvalSignatureStamp ?? null;
 
-  return (
-    <div className="mx-auto w-full max-w-[460px] rounded-lg bg-slate-100 p-3 shadow-inner">
-      <div className="aspect-[1/1.414] overflow-hidden rounded-sm bg-white shadow-xl ring-1 ring-slate-300">
-        <div className="flex h-full flex-col px-5 py-4 text-slate-800">
-          {/* Letterhead */}
-          <div className="border-b-2 border-slate-800 pb-2 text-center">
-            <div className="text-lg font-bold leading-tight tracking-tight">{review.preview.labName}</div>
-            <div className="mt-0.5 text-[9px] font-semibold uppercase tracking-[0.25em] text-slate-500">Pathology Laboratory</div>
-          </div>
-
-          {/* Patient / order header */}
-          <div className="mt-2.5 grid grid-cols-2 gap-x-4 gap-y-1 text-[10px] leading-tight">
-            <div>
-              Patient: <span className="font-semibold">{review.patient.firstName} {review.patient.lastName}</span>
-            </div>
-            <div>
-              UID: <span className="font-mono font-semibold">{review.patient.patientUid}</span>
-            </div>
-            <div>
-              Age / Sex: <span className="font-semibold">{review.patient.ageYears} y · {GENDER_SHORT[review.patient.gender] ?? '—'}</span>
-            </div>
-            <div>
-              Order: <span className="font-mono font-semibold">{review.order.id.slice(0, 8).toUpperCase()}</span>
-            </div>
-          </div>
-
-          {/* Results table */}
-          <table className="mt-2.5 w-full border-collapse text-[10px]">
-            <thead>
-              <tr className="border-y border-slate-400 text-left text-[9px] uppercase tracking-wide text-slate-500">
-                <th className="py-1 pr-2 font-semibold">Test</th>
-                <th className="py-1 pr-2 font-semibold">Result</th>
-                <th className="py-1 pr-2 font-semibold">Unit</th>
-                <th className="py-1 font-semibold">Ref Range</th>
-              </tr>
-            </thead>
-            <tbody>
-              {rows.map((r) => {
-                const approved = r.status === 'approved';
-                return (
-                  <tr key={r.id} className="border-b border-slate-200">
-                    <td className="py-1 pr-2">
-                      <span className="font-medium">{r.testNameSnapshot}</span>
-                      {approved && <span className="ml-1 text-emerald-700">✓</span>}
-                    </td>
-                    <td className="py-1 pr-2 font-mono font-semibold">
-                      {approved ? (r.resultValue ?? '—') : <span className="text-slate-400">{r.status === 'verified' ? '…' : '—'}</span>}
-                    </td>
-                    <td className="py-1 pr-2 text-slate-600">{r.unit ?? '—'}</td>
-                    <td className="py-1 font-mono text-slate-600">
-                      {r.resultType === 'numeric' && r.refLow != null && r.refHigh != null ? `${r.refLow}–${r.refHigh}` : '—'}
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
-
-          {/* Footer: signature block + QR */}
-          <div className="mt-auto pt-3">
-            <div className="flex items-end justify-between gap-3">
-              <div className="min-w-0 flex-1">
-                <div className="border-t border-slate-400 pt-1.5">
-                  <div className="text-[11px] font-semibold">Dr. Pathologist</div>
-                  <div className="mt-0.5 truncate text-[8px] text-slate-500">
-                    {firstStamp ? `Signature on file · stamp ${firstStamp}` : 'Awaiting approval signature'}
-                  </div>
-                </div>
-              </div>
-              <div className="shrink-0 text-right">
-                <PseudoQr seed={review.preview.verificationCode} className="h-14 w-14" />
-                <div className="mt-1 font-mono text-[7px] font-semibold tracking-tight text-slate-600">
-                  {review.preview.verificationCode}
-                </div>
-              </div>
-            </div>
-
-            {allApproved ? (
-              <div className="mt-2.5 rounded-sm bg-emerald-700 py-1 text-center text-[10px] font-bold uppercase tracking-wider text-white">
-                ✓ Ready for Report
-              </div>
-            ) : (
-              <div className="mt-2.5 rounded-sm bg-slate-100 py-1 text-center text-[9px] font-medium text-slate-500">
-                {approvedRows.length}/{review.summary.total} approved — results lock into the report as rows are approved
-              </div>
-            )}
-          </div>
-        </div>
+  const data: ReportSheetData = {
+    labName: review.preview.labName,
+    patient: review.patient,
+    order: review.order,
+    rows,
+    signatureStamp: firstStamp,
+    verificationCode: review.preview.verificationCode,
+    qr: <PseudoQr seed={review.preview.verificationCode} className="h-16 w-16" />,
+    footer: allApproved ? (
+      <div className="rounded-sm bg-emerald-700 py-1.5 text-center text-[11px] font-bold uppercase tracking-wider text-white">
+        ✓ Ready for Report
       </div>
-    </div>
-  );
+    ) : (
+      <div className="rounded-sm bg-slate-100 py-1.5 text-center text-[10px] font-medium text-slate-500">
+        {approved}/{review.summary.total} approved — results lock into the report as rows are approved
+      </div>
+    ),
+  };
+  return <ScaledSheet data={data} />;
 }
 
 export function ApprovalQueue() {
@@ -401,7 +310,11 @@ export function ApprovalQueue() {
                     </span>
                     {review.order.isUrgent && <Badge tone="rose">URGENT</Badge>}
                     <Badge tone="teal">{review.order.status.replaceAll('_', ' ')}</Badge>
-                    {allApproved && <Badge tone="green">Ready for Report</Badge>}
+                    {allApproved && (
+                      <Link to={`/orders/${review.order.id}/report`} className="no-print">
+                        <Badge tone="green">Ready for Report →</Badge>
+                      </Link>
+                    )}
                   </div>
                   <div className="flex items-center gap-3">
                     <span className="text-[12px] font-medium text-slate-600">
@@ -531,7 +444,7 @@ export function ApprovalQueue() {
                 {/* Right half — the LIVE A4 preview (scaled). */}
                 <div className="xl:sticky xl:top-16">
                   <p className="mb-2 text-[11px] font-semibold uppercase tracking-wide text-slate-500">Live report preview</p>
-                  <A4Preview review={review} />
+                  <PreviewSheet review={review} />
                 </div>
               </div>
             </div>
