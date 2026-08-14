@@ -8,6 +8,8 @@ import { PartiesModule } from './parties/parties.module';
 import { PatientsModule } from './patients/patients.module';
 import { PrismaModule } from './prisma/prisma.module';
 import { TenantMiddleware } from './prisma/tenant.middleware';
+import { PublicVerifyModule } from './public-verify/public-verify.module';
+import { ReportsModule } from './reports/reports.module';
 import { SamplesModule } from './samples/samples.module';
 import { SupabaseModule } from './supabase/supabase.module';
 import { VerifyModule } from './verify/verify.module';
@@ -25,6 +27,8 @@ import { VerifyModule } from './verify/verify.module';
     SamplesModule,
     VerifyModule,
     ApprovalModule,
+    ReportsModule,
+    PublicVerifyModule,
   ],
 })
 export class AppModule implements NestModule {

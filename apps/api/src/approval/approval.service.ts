@@ -1,7 +1,7 @@
 import { ConflictException, Injectable, NotFoundException } from '@nestjs/common';
-import { createHash } from 'node:crypto';
 import { OrderTestStatus, Prisma } from '@prisma/client';
 import { SYSTEM_USER_ID } from '../common/constants';
+import { signatureStamp, verificationCode } from '../common/report-code.util';
 import { computeOrderStatus } from '../orders/order-status.util';
 import { PrismaService } from '../prisma/prisma.service';
 import { RESULTS_ORDERTEST_SELECT, ageYears, toResultRow } from '../results/results.service';
@@ -11,9 +11,10 @@ import { ApproveOrderDto, RejectBackToVerifyDto } from './dto/approval-order.dto
  * The Stage 4 review select extended ONLY with the approval metadata — the
  * approve-review payload is the exact same shape as the entry grid / review
  * sheet plus each row's approval state, never a parallel one (this is now the
- * THIRD screen consuming the shared `toResultRow` mapper).
+ * THIRD screen consuming the shared `toResultRow` mapper). Exported so Stage
+ * 6's report endpoint reuses the exact same shape as the FOURTH consumer.
  */
-const APPROVAL_ORDERTEST_SELECT = {
+export const APPROVAL_ORDERTEST_SELECT = {
   ...RESULTS_ORDERTEST_SELECT,
   verifiedBy: true,
   verifiedAt: true,
@@ -22,32 +23,6 @@ const APPROVAL_ORDERTEST_SELECT = {
   approvedAt: true,
   approvalSignatureStamp: true,
 } satisfies Prisma.OrderTestSelect;
-
-/**
- * Deterministic recorded-event reference for one approval: sha256 of
- * orderTestId + actor + timestamp + the signature reference, truncated to a
- * readable stamp. Enough to prove "this specific approval event happened" for
- * later Report rendering and audit purposes — NOT a legal e-signature.
- */
-function signatureStamp(orderTestId: string, approvedBy: string, approvedAt: Date): string {
-  return createHash('sha256')
-    .update(`${orderTestId}|${approvedBy}|${approvedAt.toISOString()}|THULIR-v2-signature-ref`)
-    .digest('hex')
-    .slice(0, 16)
-    .toUpperCase();
-}
-
-/**
- * Deterministic public-verification code placeholder for the report preview
- * (the real public-verification endpoint is a later stage's concern; a
- * deterministic value derived from the order id is enough for the preview to
- * render something real-looking). Format: THU-VR-<order id prefix>-<checksum>.
- */
-function verificationCode(orderId: string): string {
-  const prefix = orderId.slice(0, 8).toUpperCase();
-  const check = createHash('sha1').update(orderId).digest('hex').slice(0, 4).toUpperCase();
-  return `THU-VR-${prefix}-${check}`;
-}
 
 @Injectable()
 export class ApprovalService {

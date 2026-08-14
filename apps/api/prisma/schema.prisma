@@ -297,6 +297,12 @@ model Order {
   createdBy        String
   createdAt        DateTime     @default(now())
 
+  // Stage 6: set once on the FIRST successful GET /orders/:id/report — the
+  // report's issue date, distinct from approvedAt (approval can predate the
+  // first print by hours/days). Displayed on the report as "Report issued"
+  // and echoed by the public verification endpoint as reportDate.
+  reportGeneratedAt DateTime?
+
   orderTests OrderTest[]
   samples    Sample[]
   invoice    Invoice?

@@ -18,8 +18,18 @@ export class PrismaService implements OnModuleDestroy {
   /** The extended, tenant-scoped client — this is what services should use. */
   readonly prisma: PrismaClient;
 
-  /** The plain, UNextended client used by the tenant extension's ownership pre-checks. */
-  private readonly raw: PrismaClient;
+  /**
+   * The plain, UNextended client — the ALLOWLISTED escape hatch from the
+   * fail-closed tenant extension. Two uses only:
+   *   1. the tenant extension's own ownership pre-checks (fetchOwnerId);
+   *   2. the public-verify service's intentionally tenant-free lookups — order
+   *      ids are globally unique and the public endpoint returns a minimal
+   *      payload, so scoping by tenant would break printed-QR lookups (the
+   *      request carries no tenant hint). Everything else MUST use the
+   *      tenant-scoped `prisma` client; a query on `raw` for tenant-scoped
+   *      models elsewhere would reintroduce the fail-open gap fixed in Stage 1.
+   */
+  readonly raw: PrismaClient;
 
   constructor(tenant: TenantContextService) {
     // The cast keeps the public type as PrismaClient: the extension only
