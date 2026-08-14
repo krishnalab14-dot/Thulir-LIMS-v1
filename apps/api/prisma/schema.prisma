@@ -352,6 +352,19 @@ model OrderTest {
   enteredBy   String?
   enteredAt   DateTime?
 
+  // Stage 4 verification — the entered → verified transition (and its
+  // reverse, verified → entered on reject-back). Per-test granularity, same
+  // as result entry: OrderTest.status is the authoritative unit of
+  // verification. verifiedBy/verifiedAt stamp the verify; verifyRejectedNote
+  // records why a verified row was sent back to entry (cleared on the next
+  // successful verify). resultValue is NEVER touched by reject-back — the
+  // technician corrects the existing value through the normal Result Entry
+  // save path (whose status guard NOT IN (verified, approved) permits
+  // entered rows).
+  verifiedBy         String?
+  verifiedAt         DateTime?
+  verifyRejectedNote String?
+
   @@index([organizationId])
   @@index([orderId])
   @@index([sampleId])

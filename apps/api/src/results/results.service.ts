@@ -7,7 +7,13 @@ import { TenantContextService } from '../prisma/tenant-context.service';
 import { SaveResultsDto } from './dto/save-results.dto';
 import { validateResultValue } from './result-value.util';
 
-const RESULTS_ORDERTEST_SELECT = {
+/**
+ * The snapshot/result fields Result Entry (and Stage 4's Review workspace)
+ * display for one OrderTest — reused verbatim by VerifyService so the review
+ * payload is the exact same shape as the entry grid (never a parallel one).
+ * VerifyService extends it with the verification metadata fields.
+ */
+export const RESULTS_ORDERTEST_SELECT = {
   id: true,
   testNameSnapshot: true,
   status: true,
@@ -23,6 +29,33 @@ const RESULTS_ORDERTEST_SELECT = {
   enteredBy: true,
   enteredAt: true,
 } satisfies Prisma.OrderTestSelect;
+
+export type ResultRowSource = Prisma.OrderTestGetPayload<{ select: typeof RESULTS_ORDERTEST_SELECT }>;
+
+/**
+ * Maps an OrderTest row selected via RESULTS_ORDERTEST_SELECT into the wire
+ * shape shared by GET /orders/:id/results (Stage 3) and Stage 4's
+ * GET /orders/:id/review — ONE mapper, never a parallel implementation.
+ * VerifyService extends the result with the verification metadata fields.
+ */
+export function toResultRow(t: ResultRowSource) {
+  return {
+    id: t.id,
+    testNameSnapshot: t.testNameSnapshot,
+    status: t.status,
+    resultType: t.snapshottedResultType ?? 'numeric',
+    resultOptions: Array.isArray(t.snapshottedResultOptions) ? (t.snapshottedResultOptions as string[]) : [],
+    abnormalOptions: t.snapshottedResultOptionsAbnormal,
+    refLow: t.snapshottedRefLow,
+    refHigh: t.snapshottedRefHigh,
+    criticalLow: t.snapshottedCriticalLow,
+    criticalHigh: t.snapshottedCriticalHigh,
+    unit: t.snapshottedUnit,
+    resultValue: t.resultValue,
+    enteredBy: t.enteredBy,
+    enteredAt: t.enteredAt,
+  };
+}
 
 @Injectable()
 export class ResultsService {
@@ -66,22 +99,7 @@ export class ResultsService {
       id: sample.id,
       barcodeValue: sample.barcodeValue,
       sampleType: sample.sampleType,
-      orderTests: sample.orderTests.map((t) => ({
-        id: t.id,
-        testNameSnapshot: t.testNameSnapshot,
-        status: t.status,
-        resultType: t.snapshottedResultType ?? 'numeric',
-        resultOptions: Array.isArray(t.snapshottedResultOptions) ? (t.snapshottedResultOptions as string[]) : [],
-        abnormalOptions: t.snapshottedResultOptionsAbnormal,
-        refLow: t.snapshottedRefLow,
-        refHigh: t.snapshottedRefHigh,
-        criticalLow: t.snapshottedCriticalLow,
-        criticalHigh: t.snapshottedCriticalHigh,
-        unit: t.snapshottedUnit,
-        resultValue: t.resultValue,
-        enteredBy: t.enteredBy,
-        enteredAt: t.enteredAt,
-      })),
+      orderTests: sample.orderTests.map((t) => toResultRow(t)),
     }));
 
     const total = samples.reduce((acc, s) => acc + s.orderTests.length, 0);
@@ -224,7 +242,7 @@ export class ResultsService {
 }
 
 /** Patient age in whole years at this moment (DOB-first, ageAtRegistration fallback). */
-function ageYears(patient: { dob: Date | null; ageAtRegistration: number | null }): number {
+export function ageYears(patient: { dob: Date | null; ageAtRegistration: number | null }): number {
   if (patient.dob) {
     const now = new Date();
     let years = now.getFullYear() - patient.dob.getFullYear();

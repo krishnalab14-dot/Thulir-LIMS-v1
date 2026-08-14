@@ -1,8 +1,10 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
+import { FlagNote } from '../components/ResultFlags';
 import { Badge, Card, EmptyState, Spinner } from '../components/ui';
 import { api, ApiError } from '../lib/api';
 import { formatDateTime } from '../lib/format';
+import { flagCellClasses } from '../lib/result-flag-view';
 import { flagResult, normalOptionFor, ResultFlag } from '../lib/result-flags';
 
 interface ResultRow {
@@ -43,22 +45,6 @@ interface SaveResponse {
 }
 
 const GENDER_SHORT: Record<string, string> = { male: 'M', female: 'F', other: 'Other' };
-
-/** Cell styling per flag kind (applied on blur, not per keystroke). */
-function cellClasses(flag: ResultFlag | undefined, focused: boolean): string {
-  const base = 'w-full rounded-md border px-2 py-1.5 text-[13px] font-mono outline-none transition focus:ring-2 focus:ring-brand-500';
-  if (focused) return `${base} border-brand-300 bg-white focus:ring-brand-500`;
-  switch (flag?.kind) {
-    case 'critical':
-      return `${base} border-rose-400 bg-rose-100 font-bold text-rose-800`;
-    case 'abnormal':
-      return `${base} border-amber-300 bg-amber-50 font-bold text-amber-700`;
-    case 'invalid':
-      return `${base} border-rose-400 bg-rose-50 text-rose-700`;
-    default:
-      return `${base} border-slate-200 bg-white text-slate-800`;
-  }
-}
 
 export function ResultEntry() {
   const { id = '' } = useParams();
@@ -406,7 +392,7 @@ export function ResultEntry() {
                                 setValues((prev) => ({ ...prev, [row.id]: '' }));
                               }
                             }}
-                            className={`${cellClasses(flag, focusedId === row.id)} resize-y font-sans`}
+                            className={`${flagCellClasses(flag, focusedId === row.id)} resize-y font-sans`}
                             placeholder="Type result…"
                           />
                         ) : (
@@ -423,7 +409,7 @@ export function ResultEntry() {
                               setExpandedText((prev) => ({ ...prev, [row.id]: true }));
                             }}
                             onBlur={() => handleBlur(row)}
-                            className={cellClasses(flag, focusedId === row.id)}
+                            className={flagCellClasses(flag, focusedId === row.id)}
                             placeholder="Type result…"
                           />
                         )
@@ -455,18 +441,11 @@ export function ResultEntry() {
                               setValues((prev) => ({ ...prev, [row.id]: '' }));
                             }
                           }}
-                          className={cellClasses(flag, focusedId === row.id)}
+                          className={flagCellClasses(flag, focusedId === row.id)}
                           placeholder={row.refLow != null ? `${row.refLow}–${row.refHigh}` : 'Enter value…'}
                         />
                       )}
-                      {flag?.kind === 'critical' && (
-                        <p className="mt-1 text-[11px] font-semibold text-rose-700">⚠ {flag.warning}</p>
-                      )}
-                      {flag?.kind === 'abnormal' && (
-                        <p className="mt-1 text-[11px] font-semibold text-amber-700">
-                          Abnormal{flag.direction ? ` (${flag.direction})` : ''}
-                        </p>
-                      )}
+                      <FlagNote flag={flag} />
                       {fieldErrors[row.id] && <p className="mt-1 text-[11px] text-rose-600">{fieldErrors[row.id]}</p>}
                     </div>
 
@@ -583,7 +562,7 @@ function OptionsInput({
             onEscape();
           }
         }}
-        className={cellClasses(undefined, focused)}
+        className={flagCellClasses(undefined, focused)}
         placeholder="Select…"
         autoComplete="off"
         spellCheck={false}

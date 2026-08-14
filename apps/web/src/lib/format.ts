@@ -24,6 +24,15 @@ export function formatDateTime(value: string | Date | null | undefined): string 
   });
 }
 
+/** Compact "waited since" label for worklists/queues (collection, verification). */
+export function waitLabel(ms: number): string {
+  if (ms < 60_000) return '<1 min';
+  const mins = Math.floor(ms / 60_000);
+  if (mins < 60) return `${mins} min`;
+  const h = Math.floor(mins / 60);
+  return `${h}h ${mins % 60}m`;
+}
+
 export function formatAge(dob: string | null | undefined, age?: number | null): string {
   if (age != null) return `${age} y`;
   if (!dob) return '—';

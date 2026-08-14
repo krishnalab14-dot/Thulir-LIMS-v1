@@ -9,6 +9,7 @@ import { PrismaModule } from './prisma/prisma.module';
 import { TenantMiddleware } from './prisma/tenant.middleware';
 import { SamplesModule } from './samples/samples.module';
 import { SupabaseModule } from './supabase/supabase.module';
+import { VerifyModule } from './verify/verify.module';
 
 @Module({
   imports: [
@@ -21,6 +22,7 @@ import { SupabaseModule } from './supabase/supabase.module';
     OrdersModule,
     InvoicesModule,
     SamplesModule,
+    VerifyModule,
   ],
 })
 export class AppModule implements NestModule {

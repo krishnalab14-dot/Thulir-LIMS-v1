@@ -7,6 +7,7 @@ import { Orders } from './pages/Orders';
 import { RegisterWizard } from './pages/RegisterWizard';
 import { ResultEntry } from './pages/ResultEntry';
 import { SampleDetail } from './pages/SampleDetail';
+import { VerifyQueue } from './pages/VerifyQueue';
 
 export function App() {
   return (
@@ -20,6 +21,7 @@ export function App() {
           <Route path="/orders" element={<Orders />} />
           <Route path="/orders/:id" element={<OrderDetail />} />
           <Route path="/orders/:id/results" element={<ResultEntry />} />
+          <Route path="/verify" element={<VerifyQueue />} />
           <Route path="/samples/:id" element={<SampleDetail />} />
           <Route path="/masters/tests" element={<MastersTests />} />
           <Route path="*" element={<Navigate to="/register" replace />} />

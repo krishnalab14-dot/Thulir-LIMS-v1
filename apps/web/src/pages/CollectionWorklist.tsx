@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { Badge, Button, Card, EmptyState, Modal, Spinner } from '../components/ui';
 import { api, ApiError } from '../lib/api';
+import { waitLabel } from '../lib/format';
 
 interface PendingSample {
   id: string;
@@ -25,15 +26,6 @@ const REJECTION_REASONS = [
   { value: 'container_leaked', label: 'Container leaked' },
   { value: 'other', label: 'Other' },
 ];
-
-function waitLabel(createdAt: string): string {
-  const ms = Date.now() - new Date(createdAt).getTime();
-  if (ms < 60_000) return '<1 min';
-  const mins = Math.floor(ms / 60_000);
-  if (mins < 60) return `${mins} min`;
-  const h = Math.floor(mins / 60);
-  return `${h}h ${mins % 60}m`;
-}
 
 export function CollectionWorklist() {
   const [samples, setSamples] = useState<PendingSample[]>([]);
@@ -242,7 +234,7 @@ export function CollectionWorklist() {
                       {s.order.isUrgent && <Badge tone="rose">URGENT</Badge>}
                     </span>
                   </td>
-                  <td className="thulir-td text-[12px] text-slate-500">{waitLabel(s.createdAt)}</td>
+                  <td className="thulir-td text-[12px] text-slate-500">{waitLabel(Date.now() - new Date(s.createdAt).getTime())}</td>
                   <td className="thulir-td">
                     <div className="flex justify-end gap-1.5">
                       <Button variant="primary" onClick={() => void collect(s.id)} disabled={busyId === s.id}>
