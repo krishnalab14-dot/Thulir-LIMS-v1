@@ -1,35 +1,38 @@
-const BASE = (import.meta.env.VITE_API_URL as string | undefined) ?? '/api';
-const ORG_ID = (import.meta.env.VITE_ORG_ID as string | undefined) ?? 'org_demo';
+import { clearSession, getAccessToken, getRefreshToken, notifyUnauthorized, refreshSession } from './auth';
+import { API_BASE, ApiError, parseErrorBody } from './http';
 
-export class ApiError extends Error {
-  constructor(
-    public status: number,
-    message: string,
-  ) {
-    super(message);
-    this.name = 'ApiError';
-  }
-}
+export { ApiError } from './http';
 
-async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
+/**
+ * Stage 7: the retired `x-organization-id` header is GONE. Tenant context now
+ * comes from the access token (`Authorization: Bearer …`). On a 401 the
+ * client transparently rotates the refresh token once and retries the request;
+ * a failed rotation clears the session and notifies the AuthProvider so the
+ * UI redirects to /login.
+ */
+async function request<T>(path: string, init: RequestInit = {}, allowRetry = true): Promise<T> {
   const headers = new Headers(init.headers);
   headers.set('Content-Type', 'application/json');
-  headers.set('x-organization-id', ORG_ID);
+  const token = getAccessToken();
+  if (token) {
+    headers.set('Authorization', `Bearer ${token}`);
+  }
 
-  const res = await fetch(`${BASE}${path}`, { ...init, headers });
-  if (!res.ok) {
-    let message = `Request failed (${res.status})`;
+  const res = await fetch(`${API_BASE}${path}`, { ...init, headers });
+
+  if (res.status === 401 && allowRetry && getRefreshToken()) {
     try {
-      const body = (await res.json()) as { message?: string | string[] };
-      if (Array.isArray(body.message)) {
-        message = body.message.join(', ');
-      } else if (typeof body.message === 'string') {
-        message = body.message;
-      }
+      await refreshSession();
     } catch {
-      // non-JSON error body — keep the generic message
+      clearSession();
+      notifyUnauthorized();
+      throw new ApiError(401, 'Your session has expired. Please sign in again.');
     }
-    throw new ApiError(res.status, message);
+    return request<T>(path, init, false);
+  }
+
+  if (!res.ok) {
+    throw new ApiError(res.status, await parseErrorBody(res));
   }
   if (res.status === 204) {
     return undefined as T;

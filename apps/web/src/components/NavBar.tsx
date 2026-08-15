@@ -1,16 +1,21 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
+import { useAuth } from '../auth/useAuth';
 
 interface MenuItem {
   label: string;
   to?: string;
   disabled?: boolean;
   hint?: string;
+  /** When set, the item is only shown for users with this capability (frontend UX only — the API enforces). */
+  capability?: 'verify' | 'approve' | 'masters';
 }
 
 interface MenuDef {
   label: string;
   items: MenuItem[];
+  /** When set, the whole menu is hidden without this capability. */
+  capability?: 'masters';
 }
 
 const MENUS: MenuDef[] = [
@@ -20,13 +25,14 @@ const MENUS: MenuDef[] = [
       { label: 'Patient Registration', to: '/register' },
       { label: 'Sample Collection', to: '/collection' },
       { label: 'Result Entry', to: '/orders', hint: 'pick an order' },
-      { label: 'Verification', to: '/verify' },
-      { label: 'Approval', to: '/approvals' },
+      { label: 'Verification', to: '/verify', capability: 'verify' },
+      { label: 'Approval', to: '/approvals', capability: 'approve' },
       { label: 'Orders', to: '/orders' },
     ],
   },
   {
     label: 'Masters',
+    capability: 'masters',
     items: [
       { label: 'Tests', to: '/masters/tests' },
       { label: 'Packages', disabled: true, hint: 'Later stage' },
@@ -115,6 +121,27 @@ function MenuDropdown({ menu }: { menu: MenuDef }) {
 
 export function NavBar() {
   const navigate = useNavigate();
+  const { user, logout, canVerify, canApprove, canManageMasters } = useAuth();
+
+  const visibleMenus = useMemo(() => {
+    return MENUS.map((menu) => {
+      if (menu.capability === 'masters' && !canManageMasters) return null;
+      return {
+        ...menu,
+        items: menu.items.filter((item) => {
+          if (item.capability === 'verify') return canVerify;
+          if (item.capability === 'approve') return canApprove;
+          return true;
+        }),
+      };
+    }).filter((m): m is MenuDef => m !== null && m.items.length > 0);
+  }, [canVerify, canApprove, canManageMasters]);
+
+  const handleLogout = async () => {
+    await logout();
+    navigate('/login', { replace: true });
+  };
+
   return (
     <header className="sticky top-0 z-40 border-b border-brand-900 bg-brand-800 shadow-sm">
       <div className="mx-auto flex h-12 max-w-[1440px] items-center gap-4 px-4 sm:px-6">
@@ -127,12 +154,12 @@ export function NavBar() {
           </span>
           <span className="leading-tight">
             <span className="block text-sm font-bold tracking-tight text-white">Thulir LIMS</span>
-            <span className="block text-[10px] font-medium uppercase tracking-wider text-brand-300">v2 · Stage 6</span>
+            <span className="block text-[10px] font-medium uppercase tracking-wider text-brand-300">v2 · Stage 7</span>
           </span>
         </Link>
 
         <nav className="flex flex-1 items-center gap-1" aria-label="Primary">
-          {MENUS.map((menu) => (
+          {visibleMenus.map((menu) => (
             <MenuDropdown key={menu.label} menu={menu} />
           ))}
         </nav>
@@ -147,10 +174,20 @@ export function NavBar() {
             </svg>
             New Registration
           </button>
-          <span className="ml-1 inline-flex h-8 items-center gap-2 rounded-md border border-white/15 px-2.5 text-[12px] font-medium text-slate-100">
-            <span className="flex h-5 w-5 items-center justify-center rounded-full bg-brand-500 text-[10px] font-bold text-white">A</span>
-            admin
-          </span>
+          {user && (
+            <span className="ml-1 inline-flex h-8 items-center gap-2 rounded-md border border-white/15 px-2.5 text-[12px] font-medium text-slate-100" title={`${user.role} · ${user.organizationId}`}>
+              <span className="flex h-5 w-5 items-center justify-center rounded-full bg-brand-500 text-[10px] font-bold text-white">
+                {user.username.charAt(0).toUpperCase()}
+              </span>
+              {user.username}
+            </span>
+          )}
+          <button
+            onClick={handleLogout}
+            className="inline-flex h-8 items-center rounded-md border border-white/20 px-2.5 text-[12px] font-semibold text-slate-100 transition hover:bg-white/10"
+          >
+            Sign out
+          </button>
         </div>
       </div>
     </header>
