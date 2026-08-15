@@ -1,7 +1,6 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { Gender, Order, Prisma, ResultType } from '@prisma/client';
 import { deriveInvoiceStatus, normalizeAndValidateSplits, roundMoney, sumSplits } from '../billing/payment.util';
-import { SYSTEM_USER_ID } from '../common/constants';
 import { patientAgeYears, resolveReferenceRange, ResolvedRange, SpecLike } from '../masters/reference-range.util';
 import { PatientsService } from '../patients/patients.service';
 import { PrismaService } from '../prisma/prisma.service';
@@ -160,7 +159,7 @@ export class OrdersService {
           subtotal,
           discountPercent,
           totalAmount: total,
-          createdBy: SYSTEM_USER_ID,
+          createdBy: this.tenant.requireUserId(),
         },
       });
 
@@ -258,7 +257,7 @@ export class OrdersService {
           data: {
             organizationId: orgId,
             invoiceId: invoice.id,
-            collectedBy: SYSTEM_USER_ID,
+            collectedBy: this.tenant.requireUserId(),
             splits: { create: splits.map((s) => ({ mode: s.mode, amount: s.amount })) },
           },
         });

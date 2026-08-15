@@ -3,8 +3,8 @@ import { Test } from '@nestjs/testing';
 import { PrismaClient } from '@prisma/client';
 import request from 'supertest';
 import { AppModule } from '../src/app.module';
-import { SYSTEM_USER_ID } from '../src/common/constants';
 import { PrismaService } from '../src/prisma/prisma.service';
+import { bearer, loginAdmin, registerOrgAdmin } from './test-helpers';
 import { TenantContextError, TenantContextService } from '../src/prisma/tenant-context.service';
 
 /**
@@ -25,6 +25,12 @@ describe('Stage 2 real-DB verification — sample collection', () => {
   let prismaService: PrismaService;
   let tenant: TenantContextService;
   const plain = new PrismaClient();
+
+  // Stage 7: the seeded admin drives this suite; a freshly-registered other
+  // org's admin plays the old `x-organization-id: org_other` cross-tenant role.
+  let authHeaders: Record<string, string>;
+  let otherAuthHeaders: Record<string, string>;
+  let adminUserId: string;
 
   // Catalog + order state shared across tests (executed in declaration order).
   let edtaSampleTypeId: string;
@@ -52,14 +58,19 @@ describe('Stage 2 real-DB verification — sample collection', () => {
     prismaService = app.get(PrismaService);
     tenant = app.get(TenantContextService);
 
+    const admin = await loginAdmin(app);
+    authHeaders = bearer(admin.accessToken);
+    adminUserId = admin.userId;
+    otherAuthHeaders = bearer((await registerOrgAdmin(app, 'samples')).accessToken);
+
     await plain.$executeRawUnsafe(
       `TRUNCATE "PaymentSplit", "Payment", "Invoice", "OrderTest", "Sample", "Order", "Patient", "UidCounter" CASCADE`,
     );
 
     // Catalog: two sample types (codes derived from name: EDTA / SERU) and
     // three tests — two sharing the EDTA tube, one on the Serum tube.
-    const st1 = await http().post('/api/masters/sample-types').set('x-organization-id', ORG).send({ name: 'EDTA Tube' });
-    const st2 = await http().post('/api/masters/sample-types').set('x-organization-id', ORG).send({ name: 'Serum Tube' });
+    const st1 = await http().post('/api/masters/sample-types').set(authHeaders).send({ name: 'EDTA Tube' });
+    const st2 = await http().post('/api/masters/sample-types').set(authHeaders).send({ name: 'Serum Tube' });
     expect(st1.status).toBe(201);
     expect(st2.status).toBe(201);
     edtaSampleTypeId = st1.body.id;
@@ -69,15 +80,15 @@ describe('Stage 2 real-DB verification — sample collection', () => {
     // numeric test with NO range at all.
     const t1 = await http()
       .post('/api/masters/tests')
-      .set('x-organization-id', ORG)
+      .set(authHeaders)
       .send({ testCode: 'S2-EDTA-A', testName: 'S2 EDTA Test A', currentPrice: 100, requiredSampleTypeId: edtaSampleTypeId, defaultRefLow: 1, defaultRefHigh: 100 });
     const t2 = await http()
       .post('/api/masters/tests')
-      .set('x-organization-id', ORG)
+      .set(authHeaders)
       .send({ testCode: 'S2-EDTA-B', testName: 'S2 EDTA Test B', currentPrice: 150, requiredSampleTypeId: edtaSampleTypeId, defaultRefLow: 1, defaultRefHigh: 100 });
     const t3 = await http()
       .post('/api/masters/tests')
-      .set('x-organization-id', ORG)
+      .set(authHeaders)
       .send({ testCode: 'S2-SER', testName: 'S2 Serum Test', currentPrice: 200, requiredSampleTypeId: serumSampleTypeId, defaultRefLow: 1, defaultRefHigh: 100 });
     expect([t1.status, t2.status, t3.status]).toEqual([201, 201, 201]);
     tEdtaA = t1.body.id;
@@ -87,7 +98,7 @@ describe('Stage 2 real-DB verification — sample collection', () => {
     // Order 1: 2 EDTA tests + 1 Serum test → exactly 2 samples.
     const o1 = await http()
       .post('/api/orders')
-      .set('x-organization-id', ORG)
+      .set(authHeaders)
       .send({
         patient: { firstName: 'Samp', lastName: 'Patient', gender: 'female', mobile: '9440000001', dob: '1992-02-02' },
         testIds: [tEdtaA, tEdtaB, tSerum],
@@ -100,7 +111,7 @@ describe('Stage 2 real-DB verification — sample collection', () => {
     // Order 2: single EDTA test → 1 sample (drives the reject/recollection chain).
     const o2 = await http()
       .post('/api/orders')
-      .set('x-organization-id', ORG)
+      .set(authHeaders)
       .send({
         patient: { firstName: 'Rej', lastName: 'Patient', gender: 'male', mobile: '9440000002', dob: '1980-03-03' },
         testIds: [tEdtaA],
@@ -148,7 +159,7 @@ describe('Stage 2 real-DB verification — sample collection', () => {
   });
 
   it('GET /api/samples/pending returns pending samples oldest-first with patient/order/urgency/sample-type info', async () => {
-    const res = await http().get('/api/samples/pending').set('x-organization-id', ORG);
+    const res = await http().get('/api/samples/pending').set(authHeaders);
     expect(res.status).toBe(200);
     const pending = res.body as Array<{
       id: string;
@@ -170,20 +181,20 @@ describe('Stage 2 real-DB verification — sample collection', () => {
 
   it('PUT /api/samples/:id/collect marks the sample collected with actor + timestamp and removes it from the worklist', async () => {
     const before = new Date();
-    const res = await http().put(`/api/samples/${sampleEdtaId}/collect`).set('x-organization-id', ORG);
+    const res = await http().put(`/api/samples/${sampleEdtaId}/collect`).set(authHeaders);
     expect(res.status).toBe(200);
     expect(res.body.status).toBe('collected');
-    expect(res.body.collectedBy).toBe(SYSTEM_USER_ID);
+    expect(res.body.collectedBy).toBe(adminUserId);
     expect(new Date(res.body.collectedAt).getTime()).toBeGreaterThanOrEqual(before.getTime());
 
-    const pending = await http().get('/api/samples/pending').set('x-organization-id', ORG);
+    const pending = await http().get('/api/samples/pending').set(authHeaders);
     expect(pending.body.some((s: { id: string }) => s.id === sampleEdtaId)).toBe(false);
   });
 
   it('concurrency: two simultaneous collect attempts on the same sample → exactly one 200, one 409', async () => {
     const [a, b] = await Promise.all([
-      http().put(`/api/samples/${sampleSerumId}/collect`).set('x-organization-id', ORG),
-      http().put(`/api/samples/${sampleSerumId}/collect`).set('x-organization-id', ORG),
+      http().put(`/api/samples/${sampleSerumId}/collect`).set(authHeaders),
+      http().put(`/api/samples/${sampleSerumId}/collect`).set(authHeaders),
     ]);
     const statuses = [a.status, b.status].sort();
     expect(statuses).toEqual([200, 409]);
@@ -191,7 +202,7 @@ describe('Stage 2 real-DB verification — sample collection', () => {
     // Exactly one collect landed in the DB — no double processing.
     const sample = await plain.sample.findUnique({ where: { id: sampleSerumId } });
     expect(sample!.status).toBe('collected');
-    expect(sample!.collectedBy).toBe(SYSTEM_USER_ID);
+    expect(sample!.collectedBy).toBe(adminUserId);
     expect(sample!.collectedAt).not.toBeNull();
     const collectedRows = await plain.sample.findMany({
       where: { id: sampleSerumId, collectedAt: { not: null } },
@@ -200,7 +211,7 @@ describe('Stage 2 real-DB verification — sample collection', () => {
   });
 
   it('collecting an already-collected sample returns 409', async () => {
-    const res = await http().put(`/api/samples/${sampleEdtaId}/collect`).set('x-organization-id', ORG);
+    const res = await http().put(`/api/samples/${sampleEdtaId}/collect`).set(authHeaders);
     expect(res.status).toBe(409);
     expect(res.body.message).toContain('already been collected or rejected');
   });
@@ -208,7 +219,7 @@ describe('Stage 2 real-DB verification — sample collection', () => {
   it('rejecting with reason "other" but no note is rejected server-side (400)', async () => {
     const res = await http()
       .put(`/api/samples/${sampleOrder2Id}/reject`)
-      .set('x-organization-id', ORG)
+      .set(authHeaders)
       .send({ reason: 'other' });
     expect(res.status).toBe(400);
     expect(JSON.stringify(res.body.message)).toContain('note is required');
@@ -226,7 +237,7 @@ describe('Stage 2 real-DB verification — sample collection', () => {
 
     const res = await http()
       .put(`/api/samples/${sampleOrder2Id}/reject`)
-      .set('x-organization-id', ORG)
+      .set(authHeaders)
       .send({ reason: 'other', note: 'torn label' });
     expect(res.status).toBe(200); // returns the new recollection sample
     const recollection = res.body;
@@ -239,7 +250,7 @@ describe('Stage 2 real-DB verification — sample collection', () => {
     expect(rejected!.status).toBe('rejected');
     expect(rejected!.rejectedReason).toBe('other');
     expect(rejected!.rejectedReasonNote).toBe('torn label');
-    expect(rejected!.rejectedBy).toBe(SYSTEM_USER_ID);
+    expect(rejected!.rejectedBy).toBe(adminUserId);
     expect(rejected!.rejectedAt).not.toBeNull();
 
     // OrderTest re-linked to the recollection.
@@ -264,7 +275,7 @@ describe('Stage 2 real-DB verification — sample collection', () => {
   it('rejecting the recollection creates -R3 and the detail endpoint walks the full chain (3 levels)', async () => {
     const res = await http()
       .put(`/api/samples/${sampleOrder2RecollectionId}/reject`)
-      .set('x-organization-id', ORG)
+      .set(authHeaders)
       .send({ reason: 'hemolyzed' });
     expect(res.status).toBe(200);
     const r3 = res.body;
@@ -272,7 +283,7 @@ describe('Stage 2 real-DB verification — sample collection', () => {
     expect(r3.recollectionOfSampleId).toBe(sampleOrder2RecollectionId);
 
     // Chain from the ORIGINAL sample: original → R2 → R3.
-    const detail = await http().get(`/api/samples/${sampleOrder2Id}`).set('x-organization-id', ORG);
+    const detail = await http().get(`/api/samples/${sampleOrder2Id}`).set(authHeaders);
     expect(detail.status).toBe(200);
     const chain = detail.body.chain as Array<{ id: string; barcodeValue: string; status: string }>;
     expect(chain.map((c) => c.barcodeValue)).toEqual([
@@ -284,7 +295,7 @@ describe('Stage 2 real-DB verification — sample collection', () => {
     expect(chain[2].status).toBe('pending_collection');
 
     // Same chain visible from a MIDDLE node (both-direction walk).
-    const mid = await http().get(`/api/samples/${sampleOrder2RecollectionId}`).set('x-organization-id', ORG);
+    const mid = await http().get(`/api/samples/${sampleOrder2RecollectionId}`).set(authHeaders);
     expect(mid.status).toBe(200);
     expect((mid.body.chain as Array<{ barcodeValue: string }>).map((c) => c.barcodeValue)).toEqual(
       chain.map((c) => c.barcodeValue),
@@ -292,7 +303,7 @@ describe('Stage 2 real-DB verification — sample collection', () => {
   });
 
   it('GET /api/samples/:id/label returns the printable label data', async () => {
-    const res = await http().get(`/api/samples/${sampleOrder2Id}/label`).set('x-organization-id', ORG);
+    const res = await http().get(`/api/samples/${sampleOrder2Id}/label`).set(authHeaders);
     expect(res.status).toBe(200);
     expect(res.body.barcodeValue).toBe(`${order2Id.toUpperCase()}-EDTA`);
     expect(res.body.patientName).toBe('Rej Patient');
@@ -315,7 +326,7 @@ describe('Stage 2 real-DB verification — sample collection', () => {
     ).rejects.toThrow(TenantContextError);
 
     // Cross-tenant conditional update → orgId ANDed in, zero rows affected → 409 (safe, not a leak).
-    const res = await http().put(`/api/samples/${sampleEdtaId}/collect`).set('x-organization-id', 'org_other');
+    const res = await http().put(`/api/samples/${sampleEdtaId}/collect`).set(otherAuthHeaders);
     expect(res.status).toBe(409);
     const still = await plain.sample.findUnique({ where: { id: sampleEdtaId } });
     expect(still!.status).toBe('collected'); // unchanged by the cross-tenant attempt

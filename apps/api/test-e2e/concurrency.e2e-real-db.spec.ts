@@ -3,6 +3,7 @@ import { Test } from '@nestjs/testing';
 import { Prisma, PrismaClient } from '@prisma/client';
 import request from 'supertest';
 import { AppModule } from '../src/app.module';
+import { bearer, loginAdmin } from './test-helpers';
 
 /**
  * CONCURRENCY verification against the real embedded Postgres — the gate
@@ -22,7 +23,6 @@ import { AppModule } from '../src/app.module';
  * Runs via `npm run verify:real-db` (and CI's real-db job) against the live
  * DB; the unit suite never executes this file.
  */
-const ORG = 'org_demo';
 const BATCH = 20;
 
 describe('Stage 1 concurrency verification (real Postgres, Promise.all)', () => {
@@ -35,6 +35,8 @@ describe('Stage 1 concurrency verification (real Postgres, Promise.all)', () => 
   let pkgPrice: number;
   let subtotal: number;
 
+  let authHeaders: Record<string, string>;
+
   const http = () => request(app.getHttpServer());
   const seqOf = (uid: string): number => Number(uid.split('-')[2]);
 
@@ -45,6 +47,15 @@ describe('Stage 1 concurrency verification (real Postgres, Promise.all)', () => 
     app.setGlobalPrefix('api');
     app.useGlobalPipes(new ValidationPipe({ whitelist: true, forbidNonWhitelisted: true, transform: true }));
     await app.init();
+    // Listen EXPLICITLY before the burst: supertest lazily calls listen(0)
+    // on the first request, and when 20 requests arrive in parallel they each
+    // race their own listen() against the same server — the losers get
+    // ECONNRESETs (a timing-dependent flake, not a product bug). One awaited
+    // listen here makes the burst deterministic on every runner.
+    await app.listen(0);
+
+    const admin = await loginAdmin(app);
+    authHeaders = bearer(admin.accessToken);
 
     // Wipe transactional data so the UidCounter starts at a known state (the
     // seed creates no patients and no counter rows). Same pattern as the
@@ -83,7 +94,7 @@ describe('Stage 1 concurrency verification (real Postgres, Promise.all)', () => 
       Array.from({ length: BATCH }, (_, i) =>
         http()
           .post('/api/patients')
-          .set('x-organization-id', ORG)
+          .set(authHeaders)
           .send({
             firstName: `Conc${i}`,
             lastName: 'Reg',
@@ -123,7 +134,7 @@ describe('Stage 1 concurrency verification (real Postgres, Promise.all)', () => 
       Array.from({ length: BATCH }, (_, i) =>
         http()
           .post('/api/orders')
-          .set('x-organization-id', ORG)
+          .set(authHeaders)
           .send({
             patient: {
               firstName: `Ord${i}`,

@@ -3,7 +3,7 @@ import { Test } from '@nestjs/testing';
 import { PrismaClient, OrderTestStatus } from '@prisma/client';
 import request from 'supertest';
 import { AppModule } from '../src/app.module';
-import { SYSTEM_USER_ID } from '../src/common/constants';
+import { bearer, loginAdmin } from './test-helpers';
 
 /**
  * REAL-DATABASE Stage 3 (Result Entry) suite — same bar as every prior stage.
@@ -23,11 +23,11 @@ import { SYSTEM_USER_ID } from '../src/common/constants';
  *   - CAS: a stale edit (wrong expectedValue) is skipped; a verified row is
  *     guarded (skipped) even though verified/approved don't exist yet.
  */
-const ORG = 'org_demo';
-
 describe('Stage 3 real-DB verification — result entry', () => {
   let app: INestApplication;
   const plain = new PrismaClient();
+  let authHeaders: Record<string, string>;
+  let adminUserId: string;
 
   let tNumeric: string; // S3 Glucose — serum, 70-99, critical 40-400
   let tOptions: string; // S3 Blood Group — edta, A+/A-/B+, B+ abnormal
@@ -56,17 +56,21 @@ describe('Stage 3 real-DB verification — result entry', () => {
     app.useGlobalPipes(new ValidationPipe({ whitelist: true, forbidNonWhitelisted: true, transform: true }));
     await app.init();
 
+    const admin = await loginAdmin(app);
+    authHeaders = bearer(admin.accessToken);
+    adminUserId = admin.userId;
+
     await plain.$executeRawUnsafe(
       `TRUNCATE "PaymentSplit", "Payment", "Invoice", "OrderTest", "Sample", "Order", "Patient", "UidCounter" CASCADE`,
     );
 
-    const stSerum = await http().post('/api/masters/sample-types').set('x-organization-id', ORG).send({ name: 'Serum Tube' });
-    const stEdta = await http().post('/api/masters/sample-types').set('x-organization-id', ORG).send({ name: 'EDTA Tube' });
+    const stSerum = await http().post('/api/masters/sample-types').set(authHeaders).send({ name: 'Serum Tube' });
+    const stEdta = await http().post('/api/masters/sample-types').set(authHeaders).send({ name: 'EDTA Tube' });
     expect([stSerum.status, stEdta.status]).toEqual([201, 201]);
 
     const num = await http()
       .post('/api/masters/tests')
-      .set('x-organization-id', ORG)
+      .set(authHeaders)
       .send({
         testCode: 'S3-GLU',
         testName: 'S3 Glucose',
@@ -81,7 +85,7 @@ describe('Stage 3 real-DB verification — result entry', () => {
       });
     const opt = await http()
       .post('/api/masters/tests')
-      .set('x-organization-id', ORG)
+      .set(authHeaders)
       .send({
         testCode: 'S3-BG',
         testName: 'S3 Blood Group',
@@ -93,11 +97,11 @@ describe('Stage 3 real-DB verification — result entry', () => {
       });
     const txt = await http()
       .post('/api/masters/tests')
-      .set('x-organization-id', ORG)
+      .set(authHeaders)
       .send({ testCode: 'S3-URN', testName: 'S3 Urine Microscopy', currentPrice: 90, requiredSampleTypeId: stSerum.body.id, resultType: 'text' });
     const crp = await http()
       .post('/api/masters/tests')
-      .set('x-organization-id', ORG)
+      .set(authHeaders)
       .send({ testCode: 'S3-CRP', testName: 'S3 CRP', currentPrice: 450, requiredSampleTypeId: stSerum.body.id, defaultRefLow: 0, defaultRefHigh: 5, criticalLow: 10, criticalHigh: 200 });
     expect([num.status, opt.status, txt.status, crp.status]).toEqual([201, 201, 201, 201]);
     tNumeric = num.body.id;
@@ -108,7 +112,7 @@ describe('Stage 3 real-DB verification — result entry', () => {
     // Order 1: numeric + options + text (serum + edta samples).
     const o1 = await http()
       .post('/api/orders')
-      .set('x-organization-id', ORG)
+      .set(authHeaders)
       .send({
         patient: { firstName: 'Res', lastName: 'Patient', gender: 'female', mobile: '9330000001', dob: '1988-01-01' },
         testIds: [tNumeric, tOptions, tText],
@@ -121,7 +125,7 @@ describe('Stage 3 real-DB verification — result entry', () => {
     // Order 2: standalone, sample stays UNCOLLECTED (the 400 guard).
     const o2 = await http()
       .post('/api/orders')
-      .set('x-organization-id', ORG)
+      .set(authHeaders)
       .send({
         patient: { firstName: 'Uncol', lastName: 'Patient', gender: 'male', mobile: '9330000002', dob: '1990-02-02' },
         testIds: [tStandalone],
@@ -133,7 +137,7 @@ describe('Stage 3 real-DB verification — result entry', () => {
     // Order 3: standalone, sample collected — drives the concurrency race.
     const o3 = await http()
       .post('/api/orders')
-      .set('x-organization-id', ORG)
+      .set(authHeaders)
       .send({
         patient: { firstName: 'Race', lastName: 'Patient', gender: 'male', mobile: '9330000003', dob: '1991-03-03' },
         testIds: [tStandalone],
@@ -156,10 +160,10 @@ describe('Stage 3 real-DB verification — result entry', () => {
 
     // Collect order1's EDTA sample only — the Serum sample stays uncollected
     // for the "only collected samples appear" assertion.
-    await http().put(`/api/samples/${edtaSampleId}/collect`).set('x-organization-id', ORG);
+    await http().put(`/api/samples/${edtaSampleId}/collect`).set(authHeaders);
     // Collect order3's sample (concurrency target).
     const o3Sample = await plain.sample.findFirst({ where: { orderId: order3Id } });
-    await http().put(`/api/samples/${o3Sample!.id}/collect`).set('x-organization-id', ORG);
+    await http().put(`/api/samples/${o3Sample!.id}/collect`).set(authHeaders);
   });
 
   afterAll(async () => {
@@ -168,7 +172,7 @@ describe('Stage 3 real-DB verification — result entry', () => {
   });
 
   it('GET /results returns only COLLECTED samples, grouped by sample with full snapshot data', async () => {
-    const res = await http().get(`/api/orders/${order1Id}/results`).set('x-organization-id', ORG);
+    const res = await http().get(`/api/orders/${order1Id}/results`).set(authHeaders);
     expect(res.status).toBe(200);
 
     // Only the collected EDTA sample (options test) — the uncollected Serum
@@ -194,8 +198,8 @@ describe('Stage 3 real-DB verification — result entry', () => {
   });
 
   it('collecting the serum sample exposes the numeric + text tests in the grid', async () => {
-    await http().put(`/api/samples/${serumSampleId}/collect`).set('x-organization-id', ORG);
-    const res = await http().get(`/api/orders/${order1Id}/results`).set('x-organization-id', ORG);
+    await http().put(`/api/samples/${serumSampleId}/collect`).set(authHeaders);
+    const res = await http().get(`/api/orders/${order1Id}/results`).set(authHeaders);
     expect(res.status).toBe(200);
     const samples = res.body.samples as Array<{ id: string; orderTests: Array<{ id: string; resultType: string; unit: string | null; refLow: number | null; refHigh: number | null; criticalLow: number | null; criticalHigh: number | null }> }>;
     expect(samples).toHaveLength(2);
@@ -218,7 +222,7 @@ describe('Stage 3 real-DB verification — result entry', () => {
     const before = new Date();
     const res = await http()
       .put(`/api/orders/${order1Id}/results`)
-      .set('x-organization-id', ORG)
+      .set(authHeaders)
       .send({ entries: [{ orderTestId: otNumeric, resultValue: '92' }] });
     expect(res.status).toBe(200);
     expect(res.body.updated).toHaveLength(1);
@@ -231,7 +235,7 @@ describe('Stage 3 real-DB verification — result entry', () => {
     const row = await plain.orderTest.findUnique({ where: { id: otNumeric } });
     expect(row!.resultValue).toBe('92');
     expect(row!.status).toBe('entered');
-    expect(row!.enteredBy).toBe(SYSTEM_USER_ID);
+    expect(row!.enteredBy).toBe(adminUserId);
     expect(row!.enteredAt!.getTime()).toBeGreaterThanOrEqual(before.getTime());
     // Stage 3 follow-up: snapshottedUnit persisted at order time.
     expect(row!.snapshottedUnit).toBe('mg/dL');
@@ -244,7 +248,7 @@ describe('Stage 3 real-DB verification — result entry', () => {
     // Legit edit: expectedValue matches the stored '92'.
     const edit = await http()
       .put(`/api/orders/${order1Id}/results`)
-      .set('x-organization-id', ORG)
+      .set(authHeaders)
       .send({ entries: [{ orderTestId: otNumeric, resultValue: '140', expectedValue: '92' }] });
     expect(edit.status).toBe(200);
     expect(edit.body.updated).toHaveLength(1);
@@ -253,7 +257,7 @@ describe('Stage 3 real-DB verification — result entry', () => {
     // Stale edit: expectedValue no longer matches ('92' was replaced by '140').
     const stale = await http()
       .put(`/api/orders/${order1Id}/results`)
-      .set('x-organization-id', ORG)
+      .set(authHeaders)
       .send({ entries: [{ orderTestId: otNumeric, resultValue: '88', expectedValue: '92' }] });
     expect(stale.status).toBe(200);
     expect(stale.body.updated).toHaveLength(0);
@@ -267,7 +271,7 @@ describe('Stage 3 real-DB verification — result entry', () => {
   it('rejects a non-numeric value server-side (400), nothing changes', async () => {
     const res = await http()
       .put(`/api/orders/${order1Id}/results`)
-      .set('x-organization-id', ORG)
+      .set(authHeaders)
       .send({ entries: [{ orderTestId: otNumeric, resultValue: 'abc' }] });
     expect(res.status).toBe(400);
     expect(res.body.message).toContain('valid number');
@@ -278,14 +282,14 @@ describe('Stage 3 real-DB verification — result entry', () => {
   it('options entry accepts only snapshotted options; an invalid option is rejected (400)', async () => {
     const ok = await http()
       .put(`/api/orders/${order1Id}/results`)
-      .set('x-organization-id', ORG)
+      .set(authHeaders)
       .send({ entries: [{ orderTestId: otOptions, resultValue: 'A+' }] });
     expect(ok.status).toBe(200);
     expect(ok.body.updated[0].resultValue).toBe('A+');
 
     const bad = await http()
       .put(`/api/orders/${order1Id}/results`)
-      .set('x-organization-id', ORG)
+      .set(authHeaders)
       .send({ entries: [{ orderTestId: otOptions, resultValue: 'AB+' }] });
     expect(bad.status).toBe(400);
     expect(bad.body.message).toContain('A+, A-, B+');
@@ -300,7 +304,7 @@ describe('Stage 3 real-DB verification — result entry', () => {
   it('empty text is "not yet entered" — never advances status; clearing a value reverts to pending', async () => {
     const empty = await http()
       .put(`/api/orders/${order1Id}/results`)
-      .set('x-organization-id', ORG)
+      .set(authHeaders)
       .send({ entries: [{ orderTestId: otText, resultValue: '' }] });
     expect(empty.status).toBe(200);
     const rowAfterEmpty = await plain.orderTest.findUnique({ where: { id: otText } });
@@ -310,7 +314,7 @@ describe('Stage 3 real-DB verification — result entry', () => {
 
     const entered = await http()
       .put(`/api/orders/${order1Id}/results`)
-      .set('x-organization-id', ORG)
+      .set(authHeaders)
       .send({ entries: [{ orderTestId: otText, resultValue: 'Occasional pus cells seen' }] });
     expect(entered.status).toBe(200);
     expect(entered.body.updated[0].status).toBe('entered');
@@ -318,7 +322,7 @@ describe('Stage 3 real-DB verification — result entry', () => {
     // Clear it back (CAS on the current value).
     const cleared = await http()
       .put(`/api/orders/${order1Id}/results`)
-      .set('x-organization-id', ORG)
+      .set(authHeaders)
       .send({ entries: [{ orderTestId: otText, resultValue: '', expectedValue: 'Occasional pus cells seen' }] });
     expect(cleared.status).toBe(200);
     const rowAfterClear = await plain.orderTest.findUnique({ where: { id: otText } });
@@ -332,7 +336,7 @@ describe('Stage 3 real-DB verification — result entry', () => {
     // otNumeric = entered, otOptions = entered, otText = pending (cleared above).
     const res = await http()
       .put(`/api/orders/${order1Id}/results`)
-      .set('x-organization-id', ORG)
+      .set(authHeaders)
       .send({ entries: [{ orderTestId: otText, resultValue: 'No abnormality detected' }] });
     expect(res.status).toBe(200);
     // All three rows are now entered → the rollup advances one rung on the
@@ -346,7 +350,7 @@ describe('Stage 3 real-DB verification — result entry', () => {
     await plain.orderTest.update({ where: { id: otOptions }, data: { status: OrderTestStatus.verified } });
     const res = await http()
       .put(`/api/orders/${order1Id}/results`)
-      .set('x-organization-id', ORG)
+      .set(authHeaders)
       .send({ entries: [{ orderTestId: otOptions, resultValue: 'B+', expectedValue: 'A+' }] });
     expect(res.status).toBe(200);
     expect(res.body.updated).toHaveLength(0);
@@ -359,7 +363,7 @@ describe('Stage 3 real-DB verification — result entry', () => {
   it('saving a result for an uncollected sample’s test is rejected at the API level (400)', async () => {
     const res = await http()
       .put(`/api/orders/${order2Id}/results`)
-      .set('x-organization-id', ORG)
+      .set(authHeaders)
       .send({ entries: [{ orderTestId: otStandaloneOrder2, resultValue: '2.5' }] });
     expect(res.status).toBe(400);
     expect(res.body.message).toContain('has not been collected');
@@ -374,8 +378,8 @@ describe('Stage 3 real-DB verification — result entry', () => {
     // UPDATE re-evaluates its predicate against the winner's committed row,
     // so the loser matches 0 rows → skipped. Never a silent overwrite.
     const [a, b] = await Promise.all([
-      http().put(`/api/orders/${order3Id}/results`).set('x-organization-id', ORG).send({ entries: [{ orderTestId: otConcurrency, resultValue: '2.1' }] }),
-      http().put(`/api/orders/${order3Id}/results`).set('x-organization-id', ORG).send({ entries: [{ orderTestId: otConcurrency, resultValue: '3.4' }] }),
+      http().put(`/api/orders/${order3Id}/results`).set(authHeaders).send({ entries: [{ orderTestId: otConcurrency, resultValue: '2.1' }] }),
+      http().put(`/api/orders/${order3Id}/results`).set(authHeaders).send({ entries: [{ orderTestId: otConcurrency, resultValue: '3.4' }] }),
     ]);
     expect(a.status).toBe(200);
     expect(b.status).toBe(200);
@@ -395,7 +399,7 @@ describe('Stage 3 real-DB verification — result entry', () => {
   });
 
   it('GET /results reflects entered statuses and the updated summary after entry', async () => {
-    const res = await http().get(`/api/orders/${order1Id}/results`).set('x-organization-id', ORG);
+    const res = await http().get(`/api/orders/${order1Id}/results`).set(authHeaders);
     expect(res.status).toBe(200);
     expect(res.body.summary.total).toBe(3);
     // numeric + text are entered; options is verified — all three have a result.

@@ -1,8 +1,8 @@
 import { ConflictException, Injectable, NotFoundException } from '@nestjs/common';
 import { OrderTestStatus, Prisma } from '@prisma/client';
-import { SYSTEM_USER_ID } from '../common/constants';
 import { computeOrderStatus } from '../orders/order-status.util';
 import { PrismaService } from '../prisma/prisma.service';
+import { TenantContextService } from '../prisma/tenant-context.service';
 import { RESULTS_ORDERTEST_SELECT, ageYears, toResultRow } from '../results/results.service';
 import { RejectBackDto, VerifyOrderDto } from './dto/verify-order.dto';
 
@@ -20,7 +20,10 @@ const REVIEW_ORDERTEST_SELECT = {
 
 @Injectable()
 export class VerifyService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly tenant: TenantContextService,
+  ) {}
 
   /**
    * GET /api/verify-queue — orders with at least one `entered` OrderTest
@@ -124,8 +127,8 @@ export class VerifyService {
    *   - concurrency-safe conditional update (`WHERE id AND orderId AND
    *     status = 'entered'`); zero rows affected → reported as SKIPPED, never
    *     a silent no-op and never a crash — the rest of the batch continues.
-   *   - sets status = verified, verifiedBy/verifiedAt (SYSTEM_USER_ID until
-   *     auth lands), and clears verifyRejectedNote from a prior reject-back.
+   *   - sets status = verified, verifiedBy/verifiedAt (the authenticated
+   *     user, Stage 7), and clears verifyRejectedNote from a prior reject-back.
    * Then recomputes the Order.status rollup via the Stage 1 helper (extend,
    * don't duplicate) and persists it only when it changes.
    */
@@ -151,7 +154,7 @@ export class VerifyService {
       for (const orderTestId of dto.orderTestIds) {
         const res = await tx.orderTest.updateMany({
           where: { id: orderTestId, orderId, status: 'entered' },
-          data: { status: 'verified', verifiedBy: SYSTEM_USER_ID, verifiedAt: now, verifyRejectedNote: null },
+          data: { status: 'verified', verifiedBy: this.tenant.requireUserId(), verifiedAt: now, verifyRejectedNote: null },
         });
         if (res.count === 0) {
           const name = namesById.get(orderTestId);

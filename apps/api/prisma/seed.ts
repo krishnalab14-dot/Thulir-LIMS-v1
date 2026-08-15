@@ -100,8 +100,8 @@ async function main() {
   });
   console.log('Seeded 5 parties');
 
-  // Admin user — auth endpoints are a LATER stage; this row just satisfies the
-  // schema and gives the future auth module a known account.
+  // Admin user — the seeded org's login (Stage 7 real auth: bcrypt-hashed,
+  // logs in through POST /api/auth/login like any other staff account).
   const passwordHash = await bcrypt.hash('Thulir@123', 10);
   await prisma.user.create({
     data: {
@@ -112,7 +112,7 @@ async function main() {
       role: Role.admin,
     },
   });
-  console.log('Seeded admin user (username: admin / password: Thulir@123 — auth is not wired yet)');
+  console.log('Seeded admin user (username: admin / password: Thulir@123)');
 
   console.log(`Seed complete. Organization "${ORG_NAME}" (${ORG_ID}) is ready.`);
 }

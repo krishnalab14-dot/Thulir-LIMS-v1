@@ -71,7 +71,7 @@ describe('ResultsService.saveResults (mock-based unit coverage; real-DB e2e cove
     };
     $transaction.mockImplementation((cb: (t: never) => unknown) => cb(tx as never));
     orderFindUnique.mockResolvedValue(orderRow());
-    const promise = tenant.run(ORG, () => service.saveResults('ord1', { entries: entries as never }));
+    const promise = tenant.runAs({ organizationId: ORG, userId: 'user_test' }, () => service.saveResults('ord1', { entries: entries as never }));
     return { tx, promise };
   }
 
@@ -102,7 +102,7 @@ describe('ResultsService.saveResults (mock-based unit coverage; real-DB e2e cove
 
     expect(tx.orderTest.updateMany).toHaveBeenCalledWith({
       where: { id: 'ot_num', orderId: 'ord1', status: { notIn: [OrderTestStatus.verified, OrderTestStatus.approved] }, resultValue: null },
-      data: expect.objectContaining({ resultValue: '92', status: 'entered', enteredBy: 'system' }),
+      data: expect.objectContaining({ resultValue: '92', status: 'entered', enteredBy: 'user_test' }),
     });
     expect(result.updated).toHaveLength(1);
     expect(result.updated[0].status).toBe('entered');

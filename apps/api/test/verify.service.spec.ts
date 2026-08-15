@@ -4,6 +4,9 @@ import { TenantContextService } from '../src/prisma/tenant-context.service';
 import { VerifyService } from '../src/verify/verify.service';
 
 const ORG = 'org_demo';
+// Stage 7: services stamp the AUTHENTICATED user (from the tenant context),
+// never a stub — unit tests run inside a context with a fixed test user.
+const USER = 'user_test';
 
 function orderRow(overrides: Record<string, unknown> = {}) {
   return {
@@ -67,7 +70,7 @@ describe('VerifyService (mock-based unit coverage; real-DB e2e covers the concur
     };
     $transaction.mockImplementation((cb: (t: never) => unknown) => cb(tx as never));
     orderFindUnique.mockResolvedValue(orderRow());
-    const promise = tenant.run(ORG, () => service.verify('ord1', { orderTestIds }));
+    const promise = tenant.runAs({ organizationId: ORG, userId: USER }, () => service.verify('ord1', { orderTestIds }));
     return { tx, promise };
   }
 
@@ -77,7 +80,7 @@ describe('VerifyService (mock-based unit coverage; real-DB e2e covers the concur
       queueOrderRow({ id: 'ord_newer', orderTests: [{ id: 'y', enteredAt: new Date('2026-08-14T10:00:00Z') }] }),
       queueOrderRow({ id: 'ord_latest', orderTests: [{ id: 'z', enteredAt: new Date('2026-08-14T11:00:00Z') }] }),
     ]);
-    const queue = await tenant.run(ORG, () => service.getVerifyQueue());
+    const queue = await tenant.runAs({ organizationId: ORG, userId: USER }, () => service.getVerifyQueue());
     expect(orderFindMany).toHaveBeenCalledWith(
       expect.objectContaining({ where: expect.objectContaining({ orderTests: { some: { status: 'entered' } } }) }),
     );
@@ -95,7 +98,7 @@ describe('VerifyService (mock-based unit coverage; real-DB e2e covers the concur
 
   it('queue filters out orders with no entered tests (the caller where does the filtering)', async () => {
     orderFindMany.mockResolvedValue([]);
-    const queue = await tenant.run(ORG, () => service.getVerifyQueue());
+    const queue = await tenant.runAs({ organizationId: ORG, userId: USER }, () => service.getVerifyQueue());
     expect(queue).toEqual([]);
   });
 
@@ -127,7 +130,7 @@ describe('VerifyService (mock-based unit coverage; real-DB e2e covers the concur
               snapshottedCriticalHigh: 400,
               snapshottedUnit: 'mg/dL',
               resultValue: '92',
-              enteredBy: 'system',
+              enteredBy: 'user_test',
               enteredAt: new Date(),
               verifiedBy: null,
               verifiedAt: null,
@@ -146,9 +149,9 @@ describe('VerifyService (mock-based unit coverage; real-DB e2e covers the concur
               snapshottedCriticalHigh: 8,
               snapshottedUnit: null,
               resultValue: '5.6',
-              enteredBy: 'system',
+              enteredBy: 'user_test',
               enteredAt: new Date(),
-              verifiedBy: 'system',
+              verifiedBy: 'user_test',
               verifiedAt: new Date(),
               verifyRejectedNote: null,
             },
@@ -156,21 +159,21 @@ describe('VerifyService (mock-based unit coverage; real-DB e2e covers the concur
         },
       ],
     });
-    const review = await tenant.run(ORG, () => service.getReview('ord1'));
+    const review = await tenant.runAs({ organizationId: ORG, userId: USER }, () => service.getReview('ord1'));
     const rows = review.samples[0].orderTests;
     expect(rows).toHaveLength(2);
     expect(rows[0]).toEqual(
       expect.objectContaining({ id: 'ot_entered', status: 'entered', refLow: 70, unit: 'mg/dL', resultValue: '92', verifiedBy: null }),
     );
     expect(rows[1]).toEqual(
-      expect.objectContaining({ id: 'ot_verified', status: 'verified', verifiedBy: 'system', verifiedAt: expect.any(Date) }),
+      expect.objectContaining({ id: 'ot_verified', status: 'verified', verifiedBy: 'user_test', verifiedAt: expect.any(Date) }),
     );
     expect(review.summary).toEqual({ total: 2, entered: 1, verified: 1 });
   });
 
   it('review throws NotFound for an unknown order', async () => {
     orderFindUnique.mockResolvedValue(null);
-    await expect(tenant.run(ORG, () => service.getReview('ghost'))).rejects.toThrow('Order not found');
+    await expect(tenant.runAs({ organizationId: ORG, userId: USER }, () => service.getReview('ghost'))).rejects.toThrow('Order not found');
   });
 
   it('verify uses a conditional update (status = entered) and stamps actor/timestamp', async () => {
@@ -181,7 +184,7 @@ describe('VerifyService (mock-based unit coverage; real-DB e2e covers the concur
       where: { id: 'ot_entered', orderId: 'ord1', status: 'entered' },
       data: expect.objectContaining({
         status: 'verified',
-        verifiedBy: 'system',
+        verifiedBy: 'user_test',
         verifiedAt: expect.any(Date),
         verifyRejectedNote: null,
       }),
@@ -232,7 +235,7 @@ describe('VerifyService (mock-based unit coverage; real-DB e2e covers the concur
     $transaction.mockImplementation((cb: (t: never) => unknown) => cb(tx as never));
     orderFindUnique.mockResolvedValue(orderRow());
 
-    const result = await tenant.run(ORG, () =>
+    const result = await tenant.runAs({ organizationId: ORG, userId: USER }, () =>
       service.rejectBack('ord1', { orderTestId: 'ot_verified', reason: 'Typing error in Sugar value' }),
     );
 
@@ -260,7 +263,7 @@ describe('VerifyService (mock-based unit coverage; real-DB e2e covers the concur
     orderFindUnique.mockResolvedValue(orderRow());
 
     await expect(
-      tenant.run(ORG, () => service.rejectBack('ord1', { orderTestId: 'ot_entered', reason: 'not verified' })),
+      tenant.runAs({ organizationId: ORG, userId: USER }, () => service.rejectBack('ord1', { orderTestId: 'ot_entered', reason: 'not verified' })),
     ).rejects.toThrow("not in 'verified' status");
     expect(tx.order.update).not.toHaveBeenCalled();
   });

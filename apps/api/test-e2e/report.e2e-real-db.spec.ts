@@ -3,10 +3,10 @@ import { Test } from '@nestjs/testing';
 import { PrismaClient } from '@prisma/client';
 import request from 'supertest';
 import { AppModule } from '../src/app.module';
-import { SYSTEM_USER_ID } from '../src/common/constants';
 import { verificationCode } from '../src/common/report-code.util';
 import { TenantContextError, TenantContextService } from '../src/prisma/tenant-context.service';
 import { ReportsService } from '../src/reports/reports.service';
+import { bearer, loginAdmin, registerOrgAdmin } from './test-helpers';
 
 /**
  * REAL-DATABASE Stage 6 (Report) suite — same bar as every prior stage.
@@ -24,13 +24,15 @@ import { ReportsService } from '../src/reports/reports.service';
  *   + validation: missing/malformed params → 400; reportGeneratedAt set once.
  *   (§7 print-stylesheet visual check is manual — noted in the build record.)
  */
-const ORG = 'org_demo';
-
 describe('Stage 6 real-DB verification — report + public verify', () => {
   let app: INestApplication;
   let reportsService: ReportsService;
   let tenant: TenantContextService;
   const plain = new PrismaClient();
+
+  let authHeaders: Record<string, string>;
+  let otherAuthHeaders: Record<string, string>;
+  let adminUserId: string;
 
   let tGlu: string; // V6 Glucose — serum, 70-99, critical 40-400, unit mg/dL
   let tHba: string; // V6 HbA1c — serum, 4-6, critical 3-8
@@ -55,16 +57,21 @@ describe('Stage 6 real-DB verification — report + public verify', () => {
     reportsService = app.get(ReportsService);
     tenant = app.get(TenantContextService);
 
+    const admin = await loginAdmin(app);
+    authHeaders = bearer(admin.accessToken);
+    adminUserId = admin.userId;
+    otherAuthHeaders = bearer((await registerOrgAdmin(app, 'report')).accessToken);
+
     await plain.$executeRawUnsafe(
       `TRUNCATE "PaymentSplit", "Payment", "Invoice", "OrderTest", "Sample", "Order", "Patient", "UidCounter" CASCADE`,
     );
 
-    const stSerum = await http().post('/api/masters/sample-types').set('x-organization-id', ORG).send({ name: 'Serum Tube V6' });
+    const stSerum = await http().post('/api/masters/sample-types').set(authHeaders).send({ name: 'Serum Tube V6' });
     expect(stSerum.status).toBe(201);
 
     const glu = await http()
       .post('/api/masters/tests')
-      .set('x-organization-id', ORG)
+      .set(authHeaders)
       .send({
         testCode: 'V6-GLU',
         testName: 'V6 Glucose',
@@ -78,7 +85,7 @@ describe('Stage 6 real-DB verification — report + public verify', () => {
       });
     const hba = await http()
       .post('/api/masters/tests')
-      .set('x-organization-id', ORG)
+      .set(authHeaders)
       .send({
         testCode: 'V6-HBA',
         testName: 'V6 HbA1c',
@@ -96,7 +103,7 @@ describe('Stage 6 real-DB verification — report + public verify', () => {
     const mkOrder = async (name: string, mobile: string, dob: string, testIds: string[]) => {
       const res = await http()
         .post('/api/orders')
-        .set('x-organization-id', ORG)
+        .set(authHeaders)
         .send({ patient: { firstName: name, lastName: 'Report', gender: 'female', mobile, dob }, testIds, billing: {} });
       expect(res.status).toBe(201);
       return res.body.id as string;
@@ -112,25 +119,25 @@ describe('Stage 6 real-DB verification — report + public verify', () => {
     // Collect both orders' samples.
     for (const orderId of [orderFullId, orderPartialId]) {
       const sample = await plain.sample.findFirst({ where: { orderId } });
-      await http().put(`/api/samples/${sample!.id}/collect`).set('x-organization-id', ORG).expect(200);
+      await http().put(`/api/samples/${sample!.id}/collect`).set(authHeaders).expect(200);
     }
 
     // Enter results for both.
     await http()
       .put(`/api/orders/${orderFullId}/results`)
-      .set('x-organization-id', ORG)
+      .set(authHeaders)
       .send({ entries: [{ orderTestId: otGluFull, resultValue: '92' }, { orderTestId: otHbaFull, resultValue: '5.6' }] })
       .expect(200);
     await http()
       .put(`/api/orders/${orderPartialId}/results`)
-      .set('x-organization-id', ORG)
+      .set(authHeaders)
       .send({ entries: [{ orderTestId: otPartial, resultValue: '95' }] })
       .expect(200);
 
     // Verify + approve EVERYTHING in orderFull → fully approved. orderPartial
     // stays entered — the 409 gate target.
-    await http().put(`/api/orders/${orderFullId}/verify`).set('x-organization-id', ORG).send({ orderTestIds: [otGluFull, otHbaFull] }).expect(200);
-    const approve = await http().put(`/api/orders/${orderFullId}/approve`).set('x-organization-id', ORG).send({ orderTestIds: [otGluFull, otHbaFull] });
+    await http().put(`/api/orders/${orderFullId}/verify`).set(authHeaders).send({ orderTestIds: [otGluFull, otHbaFull] }).expect(200);
+    const approve = await http().put(`/api/orders/${orderFullId}/approve`).set(authHeaders).send({ orderTestIds: [otGluFull, otHbaFull] });
     expect(approve.status).toBe(200);
     expect(approve.body.approved).toHaveLength(2);
     expect(approve.body.orderStatus).toBe('approved');
@@ -143,7 +150,7 @@ describe('Stage 6 real-DB verification — report + public verify', () => {
 
   it('§5.1: fully-approved order → report returns the full data', async () => {
     const before = new Date();
-    const res = await http().get(`/api/orders/${orderFullId}/report`).set('x-organization-id', ORG);
+    const res = await http().get(`/api/orders/${orderFullId}/report`).set(authHeaders);
     expect(res.status).toBe(200);
 
     const body = res.body;
@@ -178,13 +185,13 @@ describe('Stage 6 real-DB verification — report + public verify', () => {
     expect(hba).toEqual(
       expect.objectContaining({ testNameSnapshot: 'V6 HbA1c', status: 'approved', resultValue: '5.6', refLow: 4, refHigh: 6 }),
     );
-    expect(glu.approvedBy).toBe(SYSTEM_USER_ID);
+    expect(glu.approvedBy).toBe(adminUserId);
     expect(glu.approvalSignatureStamp).toMatch(/^[0-9A-F]{16}$/);
     expect(body.summary).toEqual({ total: 2 });
 
     // Lab letterhead (name only — printable address fields are a later stage).
     expect(body.lab).toEqual({ labName: 'Thulir Demo Lab', labAddress: null });
-    expect(body.signature.signatureRef).toBe(SYSTEM_USER_ID);
+    expect(body.signature.signatureRef).toBe(adminUserId);
     expect(body.signature.stamp).toMatch(/^[0-9A-F]{16}$/);
 
     // The verification payload points at the public page with this code.
@@ -196,13 +203,13 @@ describe('Stage 6 real-DB verification — report + public verify', () => {
     expect(new Date(body.order.reportGeneratedAt).toISOString().slice(0, 10)).toBe(new Date().toISOString().slice(0, 10));
 
     // §2 decision: issued-once — a second view keeps the SAME issue date.
-    const again = await http().get(`/api/orders/${orderFullId}/report`).set('x-organization-id', ORG);
+    const again = await http().get(`/api/orders/${orderFullId}/report`).set(authHeaders);
     expect(again.status).toBe(200);
     expect(again.body.order.reportGeneratedAt).toBe(body.order.reportGeneratedAt);
   });
 
   it('§5.2: an order with a single non-approved test → 409, nothing returned', async () => {
-    const res = await http().get(`/api/orders/${orderPartialId}/report`).set('x-organization-id', ORG);
+    const res = await http().get(`/api/orders/${orderPartialId}/report`).set(authHeaders);
     expect(res.status).toBe(409);
     expect(res.body.message).toContain('V6 Glucose');
     expect(res.body.message).toContain('not ready');
@@ -215,7 +222,7 @@ describe('Stage 6 real-DB verification — report + public verify', () => {
   it('§5.3: public verify with correct order number + DOB → minimal payload, no patient name/results', async () => {
     const res = await http()
       .get('/api/public/verify-report')
-      .set('x-organization-id', ORG)
+      .set(authHeaders)
       .query({ orderNumber: codeFull, dob: '1985-01-01' });
     expect(res.status).toBe(200);
     // EXACT shape — nothing beyond the four allowed fields.
@@ -234,15 +241,15 @@ describe('Stage 6 real-DB verification — report + public verify', () => {
   it('§5.4 + §5.5: wrong DOB, nonexistent order, and not-approved order → byte-identical { valid: false }', async () => {
     const wrongDob = await http()
       .get('/api/public/verify-report')
-      .set('x-organization-id', ORG)
+      .set(authHeaders)
       .query({ orderNumber: codeFull, dob: '1999-09-09' });
     const nonexistent = await http()
       .get('/api/public/verify-report')
-      .set('x-organization-id', ORG)
+      .set(authHeaders)
       .query({ orderNumber: 'THU-VR-XXXXXXXX-0000', dob: '1985-01-01' });
     const notApproved = await http()
       .get('/api/public/verify-report')
-      .set('x-organization-id', ORG)
+      .set(authHeaders)
       .query({ orderNumber: verificationCode(orderPartialId), dob: '1986-02-02' });
 
     expect(wrongDob.status).toBe(200);
@@ -264,7 +271,7 @@ describe('Stage 6 real-DB verification — report + public verify', () => {
     // globally-unique code) — no tenant-scoping bypass needed, none possible.
     const res = await http()
       .get('/api/public/verify-report')
-      .set('x-organization-id', 'org_other')
+      .set(otherAuthHeaders)
       .query({ orderNumber: codeFull, dob: '1985-01-01' });
     expect(res.status).toBe(200);
     expect(res.body).toEqual({
@@ -282,22 +289,22 @@ describe('Stage 6 real-DB verification — report + public verify', () => {
   it('public verify also accepts the raw order id as the order number', async () => {
     const res = await http()
       .get('/api/public/verify-report')
-      .set('x-organization-id', ORG)
+      .set(authHeaders)
       .query({ orderNumber: orderFullId, dob: '1985-01-01' });
     expect(res.status).toBe(200);
     expect(res.body).toEqual(expect.objectContaining({ valid: true, orderNumber: codeFull }));
   });
 
   it('validation: missing or malformed params → 400 (client errors, never a signal about order existence)', async () => {
-    const noNumber = await http().get('/api/public/verify-report').set('x-organization-id', ORG).query({ dob: '1985-01-01' });
+    const noNumber = await http().get('/api/public/verify-report').set(authHeaders).query({ dob: '1985-01-01' });
     expect(noNumber.status).toBe(400);
 
-    const noDob = await http().get('/api/public/verify-report').set('x-organization-id', ORG).query({ orderNumber: codeFull });
+    const noDob = await http().get('/api/public/verify-report').set(authHeaders).query({ orderNumber: codeFull });
     expect(noDob.status).toBe(400);
 
     const badDob = await http()
       .get('/api/public/verify-report')
-      .set('x-organization-id', ORG)
+      .set(authHeaders)
       .query({ orderNumber: codeFull, dob: '01/01/1985' });
     expect(badDob.status).toBe(400);
   });
@@ -310,7 +317,7 @@ describe('Stage 6 real-DB verification — report + public verify', () => {
     // generic 500 with no detail.
     await expect(tenant.run('org_other', () => reportsService.getReport(orderFullId))).rejects.toThrow(TenantContextError);
 
-    const res = await http().get(`/api/orders/${orderFullId}/report`).set('x-organization-id', 'org_other');
+    const res = await http().get(`/api/orders/${orderFullId}/report`).set(otherAuthHeaders);
     expect(res.status).toBe(500);
     expect(res.body).toEqual({ statusCode: 500, message: 'Internal server error' });
   });

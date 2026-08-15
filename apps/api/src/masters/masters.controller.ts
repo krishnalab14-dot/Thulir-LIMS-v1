@@ -1,9 +1,17 @@
 import { Body, Controller, Get, Post, Query } from '@nestjs/common';
+import { Role } from '@prisma/client';
+import { Roles } from '../auth/roles.decorator';
 import { CreatePackageDto } from './dto/create-package.dto';
 import { CreateSampleTypeDto } from './dto/create-sample-type.dto';
 import { CreateTestDto } from './dto/create-test.dto';
 import { MastersService } from './masters.service';
 
+/**
+ * Masters — the test catalog is the pricing/resulting authority for every
+ * order in the org, so editing it is admin-only (Stage 7 now enforces what
+ * earlier stages documented as admin territory). Reads are open to every
+ * authenticated user (orders/result entry need the catalog).
+ */
 @Controller('masters')
 export class MastersController {
   constructor(private readonly masters: MastersService) {}
@@ -18,6 +26,7 @@ export class MastersController {
     return this.masters.listTests();
   }
 
+  @Roles(Role.admin)
   @Post('tests')
   createTest(@Body() dto: CreateTestDto) {
     return this.masters.createTest(dto);
@@ -28,6 +37,7 @@ export class MastersController {
     return this.masters.searchPackages(q);
   }
 
+  @Roles(Role.admin)
   @Post('packages')
   createPackage(@Body() dto: CreatePackageDto) {
     return this.masters.createPackage(dto);
@@ -38,6 +48,7 @@ export class MastersController {
     return this.masters.listSampleTypes();
   }
 
+  @Roles(Role.admin)
   @Post('sample-types')
   createSampleType(@Body() dto: CreateSampleTypeDto) {
     return this.masters.createSampleType(dto);

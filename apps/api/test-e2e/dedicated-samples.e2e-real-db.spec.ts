@@ -3,6 +3,7 @@ import { Test } from '@nestjs/testing';
 import { PrismaClient } from '@prisma/client';
 import request from 'supertest';
 import { AppModule } from '../src/app.module';
+import { bearer, loginAdmin } from './test-helpers';
 
 /**
  * REAL-DATABASE Stage 2.1 (dedicated-sample override) suite — same bar as the
@@ -22,11 +23,10 @@ import { AppModule } from '../src/app.module';
  *     of the two dedicated tests with each other.
  *   - dedicated barcode format + recollection (-R2) of a dedicated sample.
  */
-const ORG = 'org_demo';
-
 describe('Stage 2.1 real-DB verification — dedicated sample override', () => {
   let app: INestApplication;
   const plain = new PrismaClient();
+  let authHeaders: Record<string, string>;
 
   let edtaTypeId: string;
 
@@ -49,19 +49,22 @@ describe('Stage 2.1 real-DB verification — dedicated sample override', () => {
     app.useGlobalPipes(new ValidationPipe({ whitelist: true, forbidNonWhitelisted: true, transform: true }));
     await app.init();
 
+    const admin = await loginAdmin(app);
+    authHeaders = bearer(admin.accessToken);
+
     await plain.$executeRawUnsafe(
       `TRUNCATE "PaymentSplit", "Payment", "Invoice", "OrderTest", "Sample", "Order", "Patient", "UidCounter" CASCADE`,
     );
 
     // One EDTA-type tube shared by all five tests below.
-    const st = await http().post('/api/masters/sample-types').set('x-organization-id', ORG).send({ name: 'EDTA Tube' });
+    const st = await http().post('/api/masters/sample-types').set(authHeaders).send({ name: 'EDTA Tube' });
     expect(st.status).toBe(201);
     edtaTypeId = st.body.id;
 
     const mk = async (testCode: string, testName: string, price: number, dedicated: boolean) => {
       const res = await http()
         .post('/api/masters/tests')
-        .set('x-organization-id', ORG)
+        .set(authHeaders)
         .send({
           testCode,
           testName,
@@ -95,7 +98,7 @@ describe('Stage 2.1 real-DB verification — dedicated sample override', () => {
     const mkOrder = async (testIds: string[], mobile: string) => {
       const res = await http()
         .post('/api/orders')
-        .set('x-organization-id', ORG)
+        .set(authHeaders)
         .send({
           patient: { firstName: 'Ded', lastName: 'Sample', gender: 'female', mobile, dob: '1990-01-01' },
           testIds,
@@ -195,7 +198,7 @@ describe('Stage 2.1 real-DB verification — dedicated sample override', () => {
 
     const res = await http()
       .put(`/api/samples/${dedicated.id}/reject`)
-      .set('x-organization-id', ORG)
+      .set(authHeaders)
       .send({ reason: 'hemolyzed' });
     expect(res.status).toBe(200);
     const recollection = res.body;

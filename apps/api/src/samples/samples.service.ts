@@ -1,6 +1,5 @@
 import { ConflictException, Injectable, NotFoundException } from '@nestjs/common';
 import { Prisma, RejectionReason, Sample } from '@prisma/client';
-import { SYSTEM_USER_ID } from '../common/constants';
 import { PrismaService } from '../prisma/prisma.service';
 import { TenantContextService } from '../prisma/tenant-context.service';
 import { RejectSampleDto } from './dto/reject-sample.dto';
@@ -52,7 +51,7 @@ export class SamplesService {
     this.tenant.requireOrganizationId();
     const updated = await this.prisma.prisma.sample.updateMany({
       where: { id, status: 'pending_collection' },
-      data: { status: 'collected', collectedBy: SYSTEM_USER_ID, collectedAt: new Date() },
+      data: { status: 'collected', collectedBy: this.tenant.requireUserId(), collectedAt: new Date() },
     });
     if (updated.count === 0) {
       throw new ConflictException('Sample is not pending collection — it has already been collected or rejected');
@@ -82,7 +81,7 @@ export class SamplesService {
           status: 'rejected',
           rejectedReason: dto.reason,
           rejectedReasonNote: dto.reason === RejectionReason.other ? (dto.note ?? null) : null,
-          rejectedBy: SYSTEM_USER_ID,
+          rejectedBy: this.tenant.requireUserId(),
           rejectedAt: new Date(),
         },
       });

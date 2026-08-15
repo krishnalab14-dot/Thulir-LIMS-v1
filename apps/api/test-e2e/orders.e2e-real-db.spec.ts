@@ -3,9 +3,9 @@ import { Test } from '@nestjs/testing';
 import { PrismaClient } from '@prisma/client';
 import request from 'supertest';
 import { AppModule } from '../src/app.module';
-import { SYSTEM_USER_ID } from '../src/common/constants';
 import { PrismaService } from '../src/prisma/prisma.service';
 import { TenantContextError, TenantContextService } from '../src/prisma/tenant-context.service';
+import { bearer, loginAdmin } from './test-helpers';
 
 /**
  * REAL-DATABASE integration suite (runs only against a live PostgreSQL).
@@ -35,6 +35,11 @@ describe('Stage 1 real-DB verification', () => {
   let pkgId: string;
   let kidneyPkgId: string;
 
+  // Stage 7: every request carries the seeded admin's access token; actor
+  // assertions use the real admin user id instead of the retired adminUserId.
+  let authHeaders: Record<string, string>;
+  let adminUserId: string;
+
   const http = () => request(app.getHttpServer());
 
   beforeAll(async () => {
@@ -45,6 +50,12 @@ describe('Stage 1 real-DB verification', () => {
     await app.init();
     tenant = app.get(TenantContextService);
     prismaService = app.get(PrismaService);
+
+    // Stage 7: authenticate as the seeded admin (org_demo) over the real
+    // /api/auth/login endpoint.
+    const admin = await loginAdmin(app);
+    authHeaders = bearer(admin.accessToken);
+    adminUserId = admin.userId;
 
     // Wipe transactional data (catalog + org come from the seed). Uses a plain
     // client so the truncate itself is not tenant-scoped.
@@ -61,12 +72,12 @@ describe('Stage 1 real-DB verification', () => {
   it('registers a patient (POST /api/patients) and surfaces it in duplicate-check', async () => {
     const res = await http()
       .post('/api/patients')
-      .set('x-organization-id', ORG)
+      .set(authHeaders)
       .send({ firstName: 'Anita', lastName: 'Desai', gender: 'female', mobile: '9000000001', dob: '1991-03-14' });
     expect(res.status).toBe(201);
     expect(res.body.patientUid).toMatch(/^THU-\d{4}-\d{4}$/);
 
-    const dup = await http().get('/api/patients/check-duplicate?mobile=9000000001').set('x-organization-id', ORG);
+    const dup = await http().get('/api/patients/check-duplicate?mobile=9000000001').set(authHeaders);
     expect(dup.status).toBe(200);
     expect(dup.body.results.some((p: { id: string }) => p.id === res.body.id)).toBe(true);
   });
@@ -76,24 +87,24 @@ describe('Stage 1 real-DB verification', () => {
     // test with NO range at all, so every test this suite orders carries one.
     const a = await http()
       .post('/api/masters/tests')
-      .set('x-organization-id', ORG)
+      .set(authHeaders)
       .send({ testCode: 'E2E-ALPHA', testName: 'E2E Alpha Panel', currentPrice: 700, defaultRefLow: 1, defaultRefHigh: 100 });
     expect(a.status).toBe(201);
     const b = await http()
       .post('/api/masters/tests')
-      .set('x-organization-id', ORG)
+      .set(authHeaders)
       .send({ testCode: 'E2E-BETA', testName: 'E2E Beta Panel', currentPrice: 500, defaultRefLow: 1, defaultRefHigh: 100 });
     expect(b.status).toBe(201);
     // A third test NOT in the package — needed to combine a standalone test
     // with the package without overlapping (overlap is rejected server-side).
     const c = await http()
       .post('/api/masters/tests')
-      .set('x-organization-id', ORG)
+      .set(authHeaders)
       .send({ testCode: 'E2E-GAMMA', testName: 'E2E Gamma Panel', currentPrice: 800, defaultRefLow: 1, defaultRefHigh: 100 });
     expect(c.status).toBe(201);
     const pkg = await http()
       .post('/api/masters/packages')
-      .set('x-organization-id', ORG)
+      .set(authHeaders)
       .send({ packageName: 'E2E Bundle', packagePrice: 900, testIds: [a.body.id, b.body.id] });
     expect(pkg.status).toBe(201);
     expect(pkg.body.packagePrice).toBe('900');
@@ -107,7 +118,7 @@ describe('Stage 1 real-DB verification', () => {
   it('POST /api/orders bills a package at ITS price + a disjoint standalone test, with a split payment landing in every table', async () => {
     const res = await http()
       .post('/api/orders')
-      .set('x-organization-id', ORG)
+      .set(authHeaders)
       .send({
         patient: { firstName: 'Ramesh', lastName: 'Iyer', gender: 'male', mobile: '9000000002', dob: '1985-06-15' },
         orderDetails: { isUrgent: true, clinicalNotes: 'e2e verification' },
@@ -134,7 +145,7 @@ describe('Stage 1 real-DB verification', () => {
     expect(order!.status).toBe('billed');
     expect(order!.subtotal.toString()).toBe('1700');
     expect(order!.totalAmount.toString()).toBe('1530');
-    expect(order!.createdBy).toBe(SYSTEM_USER_ID);
+    expect(order!.createdBy).toBe(adminUserId);
 
     // One OrderTest per constituent; package price distributed (525/375), standalone at 800.
     const snapshots = order!.orderTests.map((t) => t.snapshottedPrice.toString()).sort();
@@ -150,7 +161,7 @@ describe('Stage 1 real-DB verification', () => {
     expect(invoice.payments).toHaveLength(1);
     const payment = invoice.payments[0];
     expect(payment.organizationId).toBe(ORG);
-    expect(payment.collectedBy).toBe(SYSTEM_USER_ID);
+    expect(payment.collectedBy).toBe(adminUserId);
     const splitRows = payment.splits.map((s) => `${s.mode}:${s.amount.toString()}`).sort();
     expect(splitRows).toEqual(['cash:900', 'upi:630']);
   });
@@ -160,7 +171,7 @@ describe('Stage 1 real-DB verification', () => {
     const before = await plain.order.count();
     const res = await http()
       .post('/api/orders')
-      .set('x-organization-id', ORG)
+      .set(authHeaders)
       .send({
         patient: { firstName: 'Overlap', lastName: 'Case', gender: 'male', mobile: '9000000007', dob: '1978-04-04' },
         testIds: [testAId],
@@ -176,12 +187,12 @@ describe('Stage 1 real-DB verification', () => {
   it('creates a second package overlapping the first (E2E Kidney shares E2E Alpha)', async () => {
     const d = await http()
       .post('/api/masters/tests')
-      .set('x-organization-id', ORG)
+      .set(authHeaders)
       .send({ testCode: 'E2E-DELTA', testName: 'E2E Delta Panel', currentPrice: 300, defaultRefLow: 1, defaultRefHigh: 100 });
     expect(d.status).toBe(201);
     const pkg = await http()
       .post('/api/masters/packages')
-      .set('x-organization-id', ORG)
+      .set(authHeaders)
       .send({ packageName: 'E2E Kidney', packagePrice: 800, testIds: [testAId, d.body.id] });
     expect(pkg.status).toBe(201);
     kidneyPkgId = pkg.body.id;
@@ -194,7 +205,7 @@ describe('Stage 1 real-DB verification', () => {
     const before = await plain.order.count();
     const res = await http()
       .post('/api/orders')
-      .set('x-organization-id', ORG)
+      .set(authHeaders)
       .send({
         patient: { firstName: 'Overlap', lastName: 'PkgPkg', gender: 'male', mobile: '9000000008', dob: '1979-05-05' },
         packageIds: [pkgId, kidneyPkgId],
@@ -210,7 +221,7 @@ describe('Stage 1 real-DB verification', () => {
   it('rejects discountPercent 150 server-side (400)', async () => {
     const res = await http()
       .post('/api/orders')
-      .set('x-organization-id', ORG)
+      .set(authHeaders)
       .send({
         patient: { firstName: 'Bad', lastName: 'Discount', gender: 'male', mobile: '9000000004', dob: '1975-01-01' },
         testIds: [testAId],
@@ -222,7 +233,7 @@ describe('Stage 1 real-DB verification', () => {
   it('rejects a tampered client subtotal via the cross-check (400)', async () => {
     const res = await http()
       .post('/api/orders')
-      .set('x-organization-id', ORG)
+      .set(authHeaders)
       .send({
         patient: { firstName: 'Tamper', lastName: 'Subtotal', gender: 'male', mobile: '9000000005', dob: '1976-02-02' },
         testIds: [testAId],
@@ -235,7 +246,7 @@ describe('Stage 1 real-DB verification', () => {
   it('rejects payment splits that do not sum to the amount being paid (400)', async () => {
     const res = await http()
       .post('/api/orders')
-      .set('x-organization-id', ORG)
+      .set(authHeaders)
       .send({
         patient: { firstName: 'Bad', lastName: 'Splits', gender: 'male', mobile: '9000000006', dob: '1977-03-03' },
         testIds: [testAId],
@@ -249,7 +260,7 @@ describe('Stage 1 real-DB verification', () => {
   it('records an additional payment via POST /api/invoices/:id/payments (due → partial)', async () => {
     const orderRes = await http()
       .post('/api/orders')
-      .set('x-organization-id', ORG)
+      .set(authHeaders)
       .send({
         patient: { firstName: 'Kavya', lastName: 'Nair', gender: 'female', mobile: '9000000003', dob: '1990-04-04' },
         testIds: [testAId],
@@ -261,7 +272,7 @@ describe('Stage 1 real-DB verification', () => {
 
     const payRes = await http()
       .post(`/api/invoices/${invoiceId}/payments`)
-      .set('x-organization-id', ORG)
+      .set(authHeaders)
       .send({ amount: 350, splits: [{ mode: 'cash', amount: 350 }] });
     expect(payRes.status).toBe(201);
     expect(payRes.body.status).toBe('partial');
@@ -299,7 +310,7 @@ describe('Stage 1 real-DB verification', () => {
             lastName: 'Y',
             gender: 'male',
             mobile: '0000000000',
-            createdBy: SYSTEM_USER_ID,
+            createdBy: adminUserId,
           },
         }),
       ),

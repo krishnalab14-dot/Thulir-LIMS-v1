@@ -68,7 +68,7 @@ describe('payment split validation', () => {
       $transaction.mockImplementation((cb: (t: never) => unknown) => cb(tx as never));
 
       await expect(
-        tenant.run('org_demo', () =>
+        tenant.runAs({ organizationId: 'org_demo', userId: 'user_test' }, () =>
           service.addPayment('inv1', {
             amount: 900,
             splits: [
@@ -90,7 +90,7 @@ describe('payment split validation', () => {
       tx.invoice.update.mockResolvedValue({});
       $transaction.mockImplementation((cb: (t: never) => unknown) => cb(tx as never));
 
-      const out = await tenant.run('org_demo', () =>
+      const out = await tenant.runAs({ organizationId: 'org_demo', userId: 'user_test' }, () =>
         service.addPayment('inv1', {
           splits: [
             { mode: 'cash', amount: 800 },
@@ -119,7 +119,7 @@ describe('payment split validation', () => {
       tx.invoice.update.mockResolvedValue({});
       $transaction.mockImplementation((cb: (t: never) => unknown) => cb(tx as never));
 
-      const out = await tenant.run('org_demo', () =>
+      const out = await tenant.runAs({ organizationId: 'org_demo', userId: 'user_test' }, () =>
         service.addPayment('inv1', { splits: [{ mode: 'cash', amount: 300 }] }),
       );
       expect(out.status).toBe('partial');
@@ -131,7 +131,7 @@ describe('payment split validation', () => {
       tx.invoice.findFirst.mockResolvedValue(null);
       $transaction.mockImplementation((cb: (t: never) => unknown) => cb(tx as never));
       await expect(
-        tenant.run('org_demo', () => service.addPayment('nope', { splits: [{ mode: 'cash', amount: 10 }] })),
+        tenant.runAs({ organizationId: 'org_demo', userId: 'user_test' }, () => service.addPayment('nope', { splits: [{ mode: 'cash', amount: 10 }] })),
       ).rejects.toThrow('Invoice not found');
     });
   });

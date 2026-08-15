@@ -1,7 +1,6 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { deriveInvoiceStatus, normalizeAndValidateSplits, roundMoney, sumSplits } from '../billing/payment.util';
-import { SYSTEM_USER_ID } from '../common/constants';
 import { PrismaService } from '../prisma/prisma.service';
 import { TenantContextService } from '../prisma/tenant-context.service';
 import { CreatePaymentDto } from './dto/create-payment.dto';
@@ -37,7 +36,7 @@ export class InvoicesService {
         data: {
           organizationId: invoice.organizationId,
           invoiceId: invoice.id,
-          collectedBy: SYSTEM_USER_ID,
+          collectedBy: this.tenant.requireUserId(),
           splits: { create: splits.map((s) => ({ mode: s.mode, amount: s.amount })) },
         },
       });

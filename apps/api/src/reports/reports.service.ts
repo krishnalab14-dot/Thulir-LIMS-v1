@@ -1,5 +1,4 @@
 import { ConflictException, Injectable, NotFoundException } from '@nestjs/common';
-import { SYSTEM_USER_ID } from '../common/constants';
 import { verificationCode } from '../common/report-code.util';
 import { APPROVAL_ORDERTEST_SELECT } from '../approval/approval.service';
 import { PrismaService } from '../prisma/prisma.service';
@@ -73,6 +72,10 @@ export class ReportsService {
       return max === null || t.approvedAt > max ? t.approvedAt : max;
     }, null);
     const signatureStamp = rows.find((t) => t.approvalSignatureStamp)?.approvalSignatureStamp ?? null;
+    // The report is only reachable when every row is approved, so an actual
+    // approver's id always exists — the report carries the REAL approving
+    // user (Stage 7), not a stub.
+    const approverRef = rows.find((t) => t.approvedBy)?.approvedBy ?? null;
     const code = verificationCode(order.id);
 
     return {
@@ -113,9 +116,9 @@ export class ReportsService {
         labAddress: null,
       },
       signature: {
-        // StaffDetail is a later stage; the actor placeholder stands in until
-        // auth lands, same as every stage since Stage 1.
-        signatureRef: SYSTEM_USER_ID,
+        // StaffDetail display names are a later stage; the reference is the
+        // real approving user's id (Stage 7).
+        signatureRef: approverRef,
         stamp: signatureStamp,
         approvedAt,
       },

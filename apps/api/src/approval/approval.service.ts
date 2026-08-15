@@ -1,9 +1,9 @@
 import { ConflictException, Injectable, NotFoundException } from '@nestjs/common';
 import { OrderTestStatus, Prisma } from '@prisma/client';
-import { SYSTEM_USER_ID } from '../common/constants';
 import { signatureStamp, verificationCode } from '../common/report-code.util';
 import { computeOrderStatus } from '../orders/order-status.util';
 import { PrismaService } from '../prisma/prisma.service';
+import { TenantContextService } from '../prisma/tenant-context.service';
 import { RESULTS_ORDERTEST_SELECT, ageYears, toResultRow } from '../results/results.service';
 import { ApproveOrderDto, RejectBackToVerifyDto } from './dto/approval-order.dto';
 
@@ -26,7 +26,10 @@ export const APPROVAL_ORDERTEST_SELECT = {
 
 @Injectable()
 export class ApprovalService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly tenant: TenantContextService,
+  ) {}
 
   /**
    * GET /api/approval-queue — orders with at least one `verified` OrderTest
@@ -79,8 +82,8 @@ export class ApprovalService {
    * live-preview payload: lab letterhead details (org name; Settings'
    * printable-details page is a later stage, so address fields don't exist
    * yet — flagged as a small gap), the approving staff's signature reference
-   * (StaffDetail is a later stage; the actor placeholder stands in), and a
-   * deterministic QR/verification-code placeholder.
+   * (the authenticated pathologist, Stage 7 — StaffDetail display names are
+   * still a later stage), and a deterministic QR/verification-code placeholder.
    */
   async getApproveReview(orderId: string) {
     const order = await this.prisma.prisma.order.findUnique({
@@ -137,7 +140,7 @@ export class ApprovalService {
         // Printable org address fields don't exist yet (Settings is a later
         // stage) — the letterhead renders the name only, per §2.
         labAddress: null,
-        signatureRef: SYSTEM_USER_ID, // StaffDetail is a later stage; actor placeholder until auth lands
+        signatureRef: this.tenant.requireUserId(), // the authenticated pathologist signing the preview
         verificationCode: verificationCode(order.id),
       },
     };
@@ -179,9 +182,9 @@ export class ApprovalService {
           where: { id: orderTestId, orderId, status: 'verified' },
           data: {
             status: 'approved',
-            approvedBy: SYSTEM_USER_ID,
+            approvedBy: this.tenant.requireUserId(),
             approvedAt: now,
-            approvalSignatureStamp: signatureStamp(orderTestId, SYSTEM_USER_ID, now),
+            approvalSignatureStamp: signatureStamp(orderTestId, this.tenant.requireUserId(), now),
             verifyRejectedNote: null,
           },
         });
@@ -201,7 +204,7 @@ export class ApprovalService {
           testNameSnapshot: namesById.get(orderTestId) ?? '',
           status: OrderTestStatus.approved,
           approvedAt: now,
-          approvalSignatureStamp: signatureStamp(orderTestId, SYSTEM_USER_ID, now),
+          approvalSignatureStamp: signatureStamp(orderTestId, this.tenant.requireUserId(), now),
         });
       }
 

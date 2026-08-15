@@ -3,8 +3,8 @@ import { Test } from '@nestjs/testing';
 import { PrismaClient, OrderTestStatus } from '@prisma/client';
 import request from 'supertest';
 import { AppModule } from '../src/app.module';
-import { SYSTEM_USER_ID } from '../src/common/constants';
 import { TenantContextError, TenantContextService } from '../src/prisma/tenant-context.service';
+import { bearer, loginAdmin, registerOrgAdmin } from './test-helpers';
 import { VerifyService } from '../src/verify/verify.service';
 
 /**
@@ -26,13 +26,15 @@ import { VerifyService } from '../src/verify/verify.service';
  *   - tenant fail-closed: no context throws; cross-tenant queue is empty and
  *     cross-tenant verify/reject attempts are safe no-ops.
  */
-const ORG = 'org_demo';
-
 describe('Stage 4 real-DB verification — verification', () => {
   let app: INestApplication;
   let verifyService: VerifyService;
   let tenant: TenantContextService;
   const plain = new PrismaClient();
+
+  let authHeaders: Record<string, string>;
+  let otherAuthHeaders: Record<string, string>;
+  let adminUserId: string;
 
   let tGlu: string; // V4 Glucose — serum, 70-99, critical 40-400, unit mg/dL
   let tHba: string; // V4 HbA1c — serum, 4-6, critical 3-8
@@ -61,16 +63,21 @@ describe('Stage 4 real-DB verification — verification', () => {
     verifyService = app.get(VerifyService);
     tenant = app.get(TenantContextService);
 
+    const admin = await loginAdmin(app);
+    authHeaders = bearer(admin.accessToken);
+    adminUserId = admin.userId;
+    otherAuthHeaders = bearer((await registerOrgAdmin(app, 'verify')).accessToken);
+
     await plain.$executeRawUnsafe(
       `TRUNCATE "PaymentSplit", "Payment", "Invoice", "OrderTest", "Sample", "Order", "Patient", "UidCounter" CASCADE`,
     );
 
-    const stSerum = await http().post('/api/masters/sample-types').set('x-organization-id', ORG).send({ name: 'Serum Tube V4' });
+    const stSerum = await http().post('/api/masters/sample-types').set(authHeaders).send({ name: 'Serum Tube V4' });
     expect(stSerum.status).toBe(201);
 
     const glu = await http()
       .post('/api/masters/tests')
-      .set('x-organization-id', ORG)
+      .set(authHeaders)
       .send({
         testCode: 'V4-GLU',
         testName: 'V4 Glucose',
@@ -84,7 +91,7 @@ describe('Stage 4 real-DB verification — verification', () => {
       });
     const hba = await http()
       .post('/api/masters/tests')
-      .set('x-organization-id', ORG)
+      .set(authHeaders)
       .send({
         testCode: 'V4-HBA',
         testName: 'V4 HbA1c',
@@ -102,7 +109,7 @@ describe('Stage 4 real-DB verification — verification', () => {
     const mkOrder = async (name: string, mobile: string, dob: string, testIds: string[]) => {
       const res = await http()
         .post('/api/orders')
-        .set('x-organization-id', ORG)
+        .set(authHeaders)
         .send({ patient: { firstName: name, lastName: 'Verify', gender: 'female', mobile, dob }, testIds, billing: {} });
       expect(res.status).toBe(201);
       return res.body.id as string;
@@ -124,13 +131,13 @@ describe('Stage 4 real-DB verification — verification', () => {
     // shows every test regardless of status/sample state.
     for (const orderId of [orderAId, orderBId, orderCId]) {
       const sample = await plain.sample.findFirst({ where: { orderId } });
-      await http().put(`/api/samples/${sample!.id}/collect`).set('x-organization-id', ORG).expect(200);
+      await http().put(`/api/samples/${sample!.id}/collect`).set(authHeaders).expect(200);
     }
 
     // Enter results OLDEST-FIRST for the queue ordering proof: C first, then
     // B (both), then A. 15ms gaps make the server-side enteredAt distinct.
     const enter = (orderId: string, entries: Array<{ orderTestId: string; resultValue: string }>) =>
-      http().put(`/api/orders/${orderId}/results`).set('x-organization-id', ORG).send({ entries }).expect(200);
+      http().put(`/api/orders/${orderId}/results`).set(authHeaders).send({ entries }).expect(200);
 
     await enter(orderCId, [{ orderTestId: otC, resultValue: '5.2' }]);
     await sleep(15);
@@ -148,7 +155,7 @@ describe('Stage 4 real-DB verification — verification', () => {
   });
 
   it('verify queue returns waiting orders oldest-entered-first with patient/wait/urgency info', async () => {
-    const res = await http().get('/api/verify-queue').set('x-organization-id', ORG);
+    const res = await http().get('/api/verify-queue').set(authHeaders);
     expect(res.status).toBe(200);
     const queue = res.body as Array<{
       orderId: string;
@@ -181,7 +188,7 @@ describe('Stage 4 real-DB verification — verification', () => {
   });
 
   it('review returns the FULL result sheet — every test regardless of status, same shape as the entry grid', async () => {
-    const res = await http().get(`/api/orders/${orderBId}/review`).set('x-organization-id', ORG);
+    const res = await http().get(`/api/orders/${orderBId}/review`).set(authHeaders);
     expect(res.status).toBe(200);
     expect(res.body.order.id).toBe(orderBId);
     expect(res.body.patient.firstName).toBe('Beta');
@@ -216,7 +223,7 @@ describe('Stage 4 real-DB verification — verification', () => {
   });
 
   it('review includes pending tests whose sample is not collected (unlike the entry grid)', async () => {
-    const res = await http().get(`/api/orders/${orderDId}/review`).set('x-organization-id', ORG);
+    const res = await http().get(`/api/orders/${orderDId}/review`).set(authHeaders);
     expect(res.status).toBe(200);
     const rows = res.body.samples.flatMap((s: { orderTests: unknown[] }) => s.orderTests) as Array<{
       id: string;
@@ -235,7 +242,7 @@ describe('Stage 4 real-DB verification — verification', () => {
     const before = new Date();
     const res = await http()
       .put(`/api/orders/${orderBId}/verify`)
-      .set('x-organization-id', ORG)
+      .set(authHeaders)
       .send({ orderTestIds: [otBGlu] });
     expect(res.status).toBe(200);
     expect(res.body.verified).toHaveLength(1);
@@ -246,7 +253,7 @@ describe('Stage 4 real-DB verification — verification', () => {
 
     const row = await plain.orderTest.findUnique({ where: { id: otBGlu } });
     expect(row!.status).toBe(OrderTestStatus.verified);
-    expect(row!.verifiedBy).toBe(SYSTEM_USER_ID);
+    expect(row!.verifiedBy).toBe(adminUserId);
     expect(row!.verifiedAt!.getTime()).toBeGreaterThanOrEqual(before.getTime());
     expect(row!.verifyRejectedNote).toBeNull();
     // The verify never touches the result value.
@@ -262,7 +269,7 @@ describe('Stage 4 real-DB verification — verification', () => {
     // its verifiedAt is NOT overwritten.
     const res = await http()
       .put(`/api/orders/${orderBId}/verify`)
-      .set('x-organization-id', ORG)
+      .set(authHeaders)
       .send({ orderTestIds: [otBGlu, otBHba] });
     expect(res.status).toBe(200);
     expect(res.body.verified).toHaveLength(1);
@@ -276,7 +283,7 @@ describe('Stage 4 real-DB verification — verification', () => {
     const hba = await plain.orderTest.findUnique({ where: { id: otBHba } });
     expect(glu!.status).toBe(OrderTestStatus.verified);
     expect(hba!.status).toBe(OrderTestStatus.verified);
-    expect(hba!.verifiedBy).toBe(SYSTEM_USER_ID);
+    expect(hba!.verifiedBy).toBe(adminUserId);
 
     const order = await plain.order.findUnique({ where: { id: orderBId } });
     expect(order!.status).toBe('partially_approved');
@@ -284,13 +291,13 @@ describe('Stage 4 real-DB verification — verification', () => {
 
   it('reject-back: note recorded, actor/timestamp cleared, resultValue INTACT, 409 when not verified', async () => {
     // Order A is fully entered → verify it first through the API.
-    const v = await http().put(`/api/orders/${orderAId}/verify`).set('x-organization-id', ORG).send({ orderTestIds: [otA] });
+    const v = await http().put(`/api/orders/${orderAId}/verify`).set(authHeaders).send({ orderTestIds: [otA] });
     expect(v.status).toBe(200);
     expect(v.body.verified).toHaveLength(1);
 
     const rejected = await http()
       .put(`/api/orders/${orderAId}/reject-back-to-entry`)
-      .set('x-organization-id', ORG)
+      .set(authHeaders)
       .send({ orderTestId: otA, reason: 'Typing error in Sugar value' });
     expect(rejected.status).toBe(200);
     expect(rejected.body).toEqual(
@@ -313,7 +320,7 @@ describe('Stage 4 real-DB verification — verification', () => {
     // Second reject-back on the now-entered row → 409, never a silent no-op.
     const again = await http()
       .put(`/api/orders/${orderAId}/reject-back-to-entry`)
-      .set('x-organization-id', ORG)
+      .set(authHeaders)
       .send({ orderTestId: otA, reason: 'again' });
     expect(again.status).toBe(409);
     expect(again.body.message).toContain('V4 Glucose');
@@ -322,8 +329,8 @@ describe('Stage 4 real-DB verification — verification', () => {
   it('CONCURRENCY: two simultaneous verify requests on the same entered row → exactly one lands, one skipped', async () => {
     // otC (order C) is still entered — nothing has verified it yet.
     const [a, b] = await Promise.all([
-      http().put(`/api/orders/${orderCId}/verify`).set('x-organization-id', ORG).send({ orderTestIds: [otC] }),
-      http().put(`/api/orders/${orderCId}/verify`).set('x-organization-id', ORG).send({ orderTestIds: [otC] }),
+      http().put(`/api/orders/${orderCId}/verify`).set(authHeaders).send({ orderTestIds: [otC] }),
+      http().put(`/api/orders/${orderCId}/verify`).set(authHeaders).send({ orderTestIds: [otC] }),
     ]);
     expect(a.status).toBe(200);
     expect(b.status).toBe(200);
@@ -342,12 +349,12 @@ describe('Stage 4 real-DB verification — verification', () => {
   });
 
   it('validation: empty verify batch and missing reject reason are rejected (400)', async () => {
-    const empty = await http().put(`/api/orders/${orderAId}/verify`).set('x-organization-id', ORG).send({ orderTestIds: [] });
+    const empty = await http().put(`/api/orders/${orderAId}/verify`).set(authHeaders).send({ orderTestIds: [] });
     expect(empty.status).toBe(400);
 
     const noReason = await http()
       .put(`/api/orders/${orderBId}/reject-back-to-entry`)
-      .set('x-organization-id', ORG)
+      .set(authHeaders)
       .send({ orderTestId: otBHba, reason: '' });
     expect(noReason.status).toBe(400);
   });
@@ -357,7 +364,7 @@ describe('Stage 4 real-DB verification — verification', () => {
     await expect(verifyService.getVerifyQueue()).rejects.toThrow(TenantContextError);
 
     // Cross-tenant queue → empty (the org filter is ANDed in, no leak).
-    const otherQueue = await http().get('/api/verify-queue').set('x-organization-id', 'org_other');
+    const otherQueue = await http().get('/api/verify-queue').set(otherAuthHeaders);
     expect(otherQueue.status).toBe(200);
     expect(otherQueue.body).toEqual([]);
 
@@ -370,7 +377,7 @@ describe('Stage 4 real-DB verification — verification', () => {
     // zero rows affected → reported skipped, row unchanged (safe, not a leak).
     const otherVerify = await http()
       .put(`/api/orders/${orderAId}/verify`)
-      .set('x-organization-id', 'org_other')
+      .set(otherAuthHeaders)
       .send({ orderTestIds: [otA] });
     expect(otherVerify.status).toBe(200);
     expect(otherVerify.body.verified).toHaveLength(0);
@@ -379,7 +386,7 @@ describe('Stage 4 real-DB verification — verification', () => {
     // Cross-tenant reject-back on order B's verified row → 409, row unchanged.
     const otherReject = await http()
       .put(`/api/orders/${orderBId}/reject-back-to-entry`)
-      .set('x-organization-id', 'org_other')
+      .set(otherAuthHeaders)
       .send({ orderTestId: otBHba, reason: 'nope' });
     expect(otherReject.status).toBe(409);
 

@@ -19,6 +19,7 @@ datasource db {
 
 enum Role {
   admin
+  lab_manager
   pathologist
   technician
   receptionist
@@ -118,14 +119,22 @@ model Organization {
 }
 
 model User {
-  id             String       @id @default(cuid())
-  organizationId String
-  organization   Organization @relation(fields: [organizationId], references: [id])
-  username       String
-  passwordHash   String
-  role           Role
-  isActive       Boolean      @default(true)
-  createdAt      DateTime     @default(now())
+  id               String       @id @default(cuid())
+  organizationId   String
+  organization     Organization @relation(fields: [organizationId], references: [id])
+  // Globally unique (not per-org): a username resolves to exactly one user, so
+  // login has no "which org am I logging into" ambiguity — the org is read
+  // off the matched user's row, not guessed from the request.
+  username         String       @unique
+  passwordHash     String
+  role             Role
+  isActive         Boolean      @default(true)
+  // Stage 7 real auth: opaque refresh tokens are stored ONLY as a sha-256
+  // hash (never raw), one per user, rotated on every refresh. lastLoginAt
+  // stamps the most recent successful login.
+  refreshTokenHash String?
+  lastLoginAt      DateTime?
+  createdAt        DateTime     @default(now())
 
   @@index([organizationId])
 }

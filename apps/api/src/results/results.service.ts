@@ -1,6 +1,5 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { OrderTestStatus, Prisma } from '@prisma/client';
-import { SYSTEM_USER_ID } from '../common/constants';
 import { computeOrderStatus } from '../orders/order-status.util';
 import { PrismaService } from '../prisma/prisma.service';
 import { TenantContextService } from '../prisma/tenant-context.service';
@@ -202,7 +201,7 @@ export class ResultsService {
           },
           data: clearing
             ? { resultValue: null, enteredBy: null, enteredAt: null, status: OrderTestStatus.pending }
-            : { resultValue: entry.resultValue, enteredBy: SYSTEM_USER_ID, enteredAt: new Date(), status: OrderTestStatus.entered },
+            : { resultValue: entry.resultValue, enteredBy: this.tenant.requireUserId(), enteredAt: new Date(), status: OrderTestStatus.entered },
         });
 
         if (res.count === 0) {
@@ -219,7 +218,7 @@ export class ResultsService {
           testNameSnapshot: ot.testNameSnapshot,
           resultValue: clearing ? null : entry.resultValue,
           status: clearing ? OrderTestStatus.pending : OrderTestStatus.entered,
-          enteredBy: clearing ? null : SYSTEM_USER_ID,
+          enteredBy: clearing ? null : this.tenant.requireUserId(),
           enteredAt: clearing ? null : new Date(),
         });
       }

@@ -70,9 +70,9 @@ function reviewOrderRow() {
             snapshottedCriticalHigh: 400,
             snapshottedUnit: 'mg/dL',
             resultValue: '92',
-            enteredBy: 'system',
+            enteredBy: 'user_test',
             enteredAt: new Date(),
-            verifiedBy: 'system',
+            verifiedBy: 'user_test',
             verifiedAt: new Date(),
             verifyRejectedNote: null,
             approvedBy: null,
@@ -92,12 +92,12 @@ function reviewOrderRow() {
             snapshottedCriticalHigh: 8,
             snapshottedUnit: null,
             resultValue: '5.6',
-            enteredBy: 'system',
+            enteredBy: 'user_test',
             enteredAt: new Date(),
-            verifiedBy: 'system',
+            verifiedBy: 'user_test',
             verifiedAt: new Date(),
             verifyRejectedNote: null,
-            approvedBy: 'system',
+            approvedBy: 'user_test',
             approvedAt: new Date(),
             approvalSignatureStamp: 'AABBCCDD00112233',
           },
@@ -135,7 +135,7 @@ describe('ApprovalService (mock-based unit coverage; real-DB e2e covers the conc
     };
     $transaction.mockImplementation((cb: (t: never) => unknown) => cb(tx as never));
     orderFindUnique.mockResolvedValue(orderRow());
-    const promise = tenant.run(ORG, () => service.approve('ord1', { orderTestIds }));
+    const promise = tenant.runAs({ organizationId: ORG, userId: 'user_test' }, () => service.approve('ord1', { orderTestIds }));
     return { tx, promise };
   }
 
@@ -145,7 +145,7 @@ describe('ApprovalService (mock-based unit coverage; real-DB e2e covers the conc
       queueOrderRow({ id: 'ord_newer', orderTests: [{ id: 'y', verifiedAt: new Date('2026-08-14T10:00:00Z') }] }),
       queueOrderRow({ id: 'ord_latest', orderTests: [{ id: 'z', verifiedAt: new Date('2026-08-14T11:00:00Z') }] }),
     ]);
-    const queue = await tenant.run(ORG, () => service.getApprovalQueue());
+    const queue = await tenant.runAs({ organizationId: ORG, userId: 'user_test' }, () => service.getApprovalQueue());
     expect(orderFindMany).toHaveBeenCalledWith(
       expect.objectContaining({ where: expect.objectContaining({ orderTests: { some: { status: 'verified' } } }) }),
     );
@@ -163,13 +163,13 @@ describe('ApprovalService (mock-based unit coverage; real-DB e2e covers the conc
 
   it('queue filters out orders with no verified tests (the caller where does the filtering)', async () => {
     orderFindMany.mockResolvedValue([]);
-    const queue = await tenant.run(ORG, () => service.getApprovalQueue());
+    const queue = await tenant.runAs({ organizationId: ORG, userId: 'user_test' }, () => service.getApprovalQueue());
     expect(queue).toEqual([]);
   });
 
   it('approve-review returns the entry-grid shape + approval metadata AND the preview payload', async () => {
     orderFindUnique.mockResolvedValue(reviewOrderRow());
-    const review = await tenant.run(ORG, () => service.getApproveReview('ord1'));
+    const review = await tenant.runAs({ organizationId: ORG, userId: 'user_test' }, () => service.getApproveReview('ord1'));
     const rows = review.samples[0].orderTests;
     expect(rows).toHaveLength(2);
     expect(rows[0]).toEqual(
@@ -188,7 +188,7 @@ describe('ApprovalService (mock-based unit coverage; real-DB e2e covers the conc
       expect.objectContaining({
         id: 'ot_approved',
         status: 'approved',
-        approvedBy: 'system',
+        approvedBy: 'user_test',
         approvedAt: expect.any(Date),
         approvalSignatureStamp: 'AABBCCDD00112233',
       }),
@@ -198,7 +198,7 @@ describe('ApprovalService (mock-based unit coverage; real-DB e2e covers the conc
       expect.objectContaining({
         labName: 'Thulir Demo Lab',
         labAddress: null,
-        signatureRef: 'system',
+        signatureRef: 'user_test',
         verificationCode: expect.stringMatching(/^THU-VR-[0-9A-Z]+-[0-9A-F]{4}$/),
       }),
     );
@@ -206,7 +206,7 @@ describe('ApprovalService (mock-based unit coverage; real-DB e2e covers the conc
 
   it('approve-review throws NotFound for an unknown order', async () => {
     orderFindUnique.mockResolvedValue(null);
-    await expect(tenant.run(ORG, () => service.getApproveReview('ghost'))).rejects.toThrow('Order not found');
+    await expect(tenant.runAs({ organizationId: ORG, userId: 'user_test' }, () => service.getApproveReview('ghost'))).rejects.toThrow('Order not found');
   });
 
   it('approve uses a conditional update (status = verified) and stamps actor/timestamp/signature-stamp', async () => {
@@ -217,7 +217,7 @@ describe('ApprovalService (mock-based unit coverage; real-DB e2e covers the conc
       where: { id: 'ot_verified', orderId: 'ord1', status: 'verified' },
       data: expect.objectContaining({
         status: 'approved',
-        approvedBy: 'system',
+        approvedBy: 'user_test',
         approvedAt: expect.any(Date),
         approvalSignatureStamp: expect.stringMatching(/^[0-9A-F]{16}$/),
         verifyRejectedNote: null,
@@ -271,7 +271,7 @@ describe('ApprovalService (mock-based unit coverage; real-DB e2e covers the conc
     $transaction.mockImplementation((cb: (t: never) => unknown) => cb(tx as never));
     orderFindUnique.mockResolvedValue(orderRow());
 
-    const result = await tenant.run(ORG, () =>
+    const result = await tenant.runAs({ organizationId: ORG, userId: 'user_test' }, () =>
       service.rejectBackToVerify('ord1', { orderTestId: 'ot_approved', reason: 'Value inconsistent with clinical picture' }),
     );
 
@@ -302,7 +302,7 @@ describe('ApprovalService (mock-based unit coverage; real-DB e2e covers the conc
     orderFindUnique.mockResolvedValue(orderRow());
 
     await expect(
-      tenant.run(ORG, () => service.rejectBackToVerify('ord1', { orderTestId: 'ot_verified', reason: 'not there' })),
+      tenant.runAs({ organizationId: ORG, userId: 'user_test' }, () => service.rejectBackToVerify('ord1', { orderTestId: 'ot_verified', reason: 'not there' })),
     ).rejects.toThrow("not verified or approved");
     expect(tx.order.update).not.toHaveBeenCalled();
   });

@@ -5,6 +5,7 @@ import request from 'supertest';
 import { AppModule } from '../src/app.module';
 import { TenantContextError, TenantContextService } from '../src/prisma/tenant-context.service';
 import { PrismaService } from '../src/prisma/prisma.service';
+import { bearer, loginAdmin } from './test-helpers';
 
 /**
  * REAL-DATABASE Stage 2.5 (Test Master extension) suite — same bar as every
@@ -37,6 +38,8 @@ describe('Stage 2.5 real-DB verification — Test Master extension', () => {
   let tTxtId: string; // text
   let tNoRangeId: string; // numeric with NO default and NO specs → order rejected
 
+  let authHeaders: Record<string, string>;
+
   const http = () => request(app.getHttpServer());
   const dobYearsAgo = (years: number) => {
     const d = new Date();
@@ -55,6 +58,9 @@ describe('Stage 2.5 real-DB verification — Test Master extension', () => {
     tenant = app.get(TenantContextService);
     prismaService = app.get(PrismaService);
 
+    const admin = await loginAdmin(app);
+    authHeaders = bearer(admin.accessToken);
+
     await plain.$executeRawUnsafe(
       `TRUNCATE "PaymentSplit", "Payment", "Invoice", "OrderTest", "Sample", "Order", "Patient", "UidCounter" CASCADE`,
     );
@@ -64,7 +70,7 @@ describe('Stage 2.5 real-DB verification — Test Master extension', () => {
     // female 13-65 → 25-35 — different sex tiers never conflict).
     const num = await http()
       .post('/api/masters/tests')
-      .set('x-organization-id', ORG)
+      .set(authHeaders)
       .send({
         testCode: 'TM-NUM',
         testName: 'TM Numeric Marker',
@@ -83,14 +89,14 @@ describe('Stage 2.5 real-DB verification — Test Master extension', () => {
 
     const opt = await http()
       .post('/api/masters/tests')
-      .set('x-organization-id', ORG)
+      .set(authHeaders)
       .send({ testCode: 'TM-OPT', testName: 'TM Options Marker', currentPrice: 120, resultType: 'options', resultOptions: ['A+', 'A-', 'B+'] });
     expect(opt.status).toBe(201);
     tOptId = opt.body.id;
 
     const txt = await http()
       .post('/api/masters/tests')
-      .set('x-organization-id', ORG)
+      .set(authHeaders)
       .send({ testCode: 'TM-TXT', testName: 'TM Free-Text Marker', currentPrice: 90, resultType: 'text' });
     expect(txt.status).toBe(201);
     tTxtId = txt.body.id;
@@ -99,7 +105,7 @@ describe('Stage 2.5 real-DB verification — Test Master extension', () => {
     // allowed (rule 4 rejects ORDERING, not defining), so this can exist.
     const noRange = await http()
       .post('/api/masters/tests')
-      .set('x-organization-id', ORG)
+      .set(authHeaders)
       .send({ testCode: 'TM-NORANGE', testName: 'TM No Range Marker', currentPrice: 80 });
     expect(noRange.status).toBe(201);
     tNoRangeId = noRange.body.id;
@@ -119,7 +125,7 @@ describe('Stage 2.5 real-DB verification — Test Master extension', () => {
   const placeOrder = async (testId: string, mobile: string, gender: string, ageYears: number) => {
     const res = await http()
       .post('/api/orders')
-      .set('x-organization-id', ORG)
+      .set(authHeaders)
       .send({
         patient: { firstName: 'TM', lastName: 'Patient', gender, mobile, dob: dobYearsAgo(ageYears) },
         testIds: [testId],
@@ -129,7 +135,7 @@ describe('Stage 2.5 real-DB verification — Test Master extension', () => {
   };
 
   it('scenario 1: numeric test with default + 2 non-overlapping specs + critical range persists and reloads intact', async () => {
-    const list = await http().get('/api/masters/tests').set('x-organization-id', ORG);
+    const list = await http().get('/api/masters/tests').set(authHeaders);
     expect(list.status).toBe(200);
     const row = (list.body as { id: string; resultType: string; defaultRefLow: number; defaultRefHigh: number; criticalLow: number; criticalHigh: number; specifications: unknown[] }[]).find((t) => t.id === tNumId)!;
     expect(row.resultType).toBe('numeric');
@@ -165,7 +171,7 @@ describe('Stage 2.5 real-DB verification — Test Master extension', () => {
   it('scenario 4: two overlapping specifications for the same test are rejected at save time with a clear error', async () => {
     const res = await http()
       .post('/api/masters/tests')
-      .set('x-organization-id', ORG)
+      .set(authHeaders)
       .send({
         testCode: 'TM-OVERLAP',
         testName: 'TM Overlapping Specs',

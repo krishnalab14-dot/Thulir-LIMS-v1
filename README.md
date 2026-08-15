@@ -1,6 +1,6 @@
 # Thulir LIMS v1
 
-A multi-tenant Laboratory Information Management System (LIMS). **Stage 1** covers **Patient Registration → Test/Package Order → Billing**; **Stage 2** adds **Sample Collection** (worklist, collect/reject with auto-recollection, printable labels); **Stage 2.5** extends the Test Master with the result model (numeric/options/text types, age/sex reference ranges, critical thresholds, abnormal-option classification) that Result Entry consumes; **Stage 3** adds **Result Entry** — a keyboard-first grid grouped by sample, validating every value against its order-time snapshots, with abnormal/critical visual flagging, a concurrency-safe compare-and-swap save, the order-status rollup cascade, and per-test display units (snapshotted at order time alongside price/range); **Stage 4** adds **Verification** — a split-screen verify queue (oldest-entered-first with wait times/urgency badges) and a full result-sheet review workspace with per-row Verify / Verify All Visible and reject-back-to-entry (with a required reason), all on concurrency-safe conditional writes; **Stage 5** adds **Approval** — the pathologist's last gate, with an approval queue (oldest-verified-first), a split review workspace pairing the shared result sheet with a **live A4 report preview** (letterhead, results table that locks in as rows are approved, signature block with a recorded approval-signature stamp, and a deterministic QR/verification-code placeholder), per-row Approve & Sign / Approve All Visible, and reject-back-to-verify that returns rows to the same entered state with all stamps cleared; **Stage 6** closes the base pipeline with **Report** — a real A4 report page (print / save-as-PDF via the browser, print stylesheet, issued-once report date) reachable only for fully-approved orders, and a **public verification endpoint** behind a real QR code that confirms a report's authenticity with just order number + date of birth, returning only `{valid, orderNumber, labName, reportDate}` and answering unknown-order / not-approved / wrong-DOB identically. Inventory and analytics remain later stages.
+A multi-tenant Laboratory Information Management System (LIMS). **Stage 1** covers **Patient Registration → Test/Package Order → Billing**; **Stage 2** adds **Sample Collection** (worklist, collect/reject with auto-recollection, printable labels); **Stage 2.5** extends the Test Master with the result model (numeric/options/text types, age/sex reference ranges, critical thresholds, abnormal-option classification) that Result Entry consumes; **Stage 3** adds **Result Entry** — a keyboard-first grid grouped by sample, validating every value against its order-time snapshots, with abnormal/critical visual flagging, a concurrency-safe compare-and-swap save, the order-status rollup cascade, and per-test display units (snapshotted at order time alongside price/range); **Stage 4** adds **Verification** — a split-screen verify queue (oldest-entered-first with wait times/urgency badges) and a full result-sheet review workspace with per-row Verify / Verify All Visible and reject-back-to-entry (with a required reason), all on concurrency-safe conditional writes; **Stage 5** adds **Approval** — the pathologist's last gate, with an approval queue (oldest-verified-first), a split review workspace pairing the shared result sheet with a **live A4 report preview** (letterhead, results table that locks in as rows are approved, signature block with a recorded approval-signature stamp, and a deterministic QR/verification-code placeholder), per-row Approve & Sign / Approve All Visible, and reject-back-to-verify that returns rows to the same entered state with all stamps cleared; **Stage 6** closes the base pipeline with **Report** — a real A4 report page (print / save-as-PDF via the browser, print stylesheet, issued-once report date) reachable only for fully-approved orders, and a **public verification endpoint** behind a real QR code that confirms a report's authenticity with just order number + date of birth, returning only `{valid, orderNumber, labName, reportDate}` and answering unknown-order / not-approved / wrong-DOB identically; **Stage 7** replaces the temporary `x-organization-id` header + system-user stub with **real auth** — org-first registration (the first registered user of a new lab becomes its admin), username/password login with bcrypt hashing, short-lived JWT access tokens + rotating hashed refresh tokens, a global JWT guard, and role gates (admin/lab_manager/pathologist/technician/receptionist) — with the tenant context and every actor stamp (`createdBy`, `collectedBy`, `verifiedBy`, `approvedBy`) now read off the verified token. Inventory and analytics remain later stages.
 
 > Full spec, done-criteria and architectural rules: see **[SETUP.md](./SETUP.md)**.
 
@@ -41,7 +41,7 @@ npm run dev
 docker compose up --build
 ```
 
-Seeded login (auth is a later stage — the user row exists for the future auth module): `admin` / `Thulir@123`.
+Seeded login (Stage 7 real auth): `admin` / `Thulir@123` — signs in through `POST /api/auth/login` and gets a JWT access token + rotating refresh token.
 
 ## Environment Variables
 
@@ -49,20 +49,27 @@ Seeded login (auth is a later stage — the user row exists for the future auth 
 | -------- | ----- | ------- |
 | `DATABASE_URL` | `apps/api/.env` | PostgreSQL connection (Prisma) |
 | `API_PORT` | `apps/api/.env` | API port (default `3000`, binds `0.0.0.0`). Named `API_PORT`, not `PORT` — Freebuff injects `PORT` for the web dev server, so sharing it made Nest collide with Vite (`EADDRINUSE`) |
-| `DEFAULT_ORG_ID` | `apps/api/.env` | Tenant used when no `x-organization-id` header is sent (until auth lands) |
+| `JWT_SECRET` | `apps/api/.env` | Access-token signing secret (Stage 7 auth) — **required in production**; dev falls back to an insecure default |
+| `JWT_EXPIRES_IN` | `apps/api/.env` | Access-token lifetime (default `15m`) |
+| `DEFAULT_ORG_ID` | `apps/api/.env` | Tenant context for the intentionally-public routes only (auth login/register, public verify-report) — the `x-organization-id` header is retired |
 | `VITE_API_URL` | `apps/web/.env` | Optional full API base URL (defaults to relative `/api` via the Vite dev proxy / nginx) |
-| `VITE_ORG_ID` | `apps/web/.env` | Organization id header sent by the web app (default `org_demo`) |
-| `SUPABASE_URL` | `apps/api/.env` | Supabase project URL (`https://<ref>.supabase.co`) — auth/storage backend |
+| `SUPABASE_URL` | `apps/api/.env` | Supabase project URL (`https://<ref>.supabase.co`) — external auth/storage backend |
 | `SUPABASE_ANON_KEY` | `apps/api/.env` | Supabase public `anon` key |
 | `SUPABASE_SERVICE_ROLE_KEY` | `apps/api/.env` | Supabase secret `service_role` key (server-side only) |
 | `SUPABASE_PROJECT_REF` | `apps/api/.env` | Supabase project reference (from the project URL) |
 
 Secrets are managed via the Freebuff Keys UI in hosted environments; never commit `.env` files.
 
-## API Surface (Stage 1)
+## API Surface
 
 | Method | Endpoint | Purpose |
 | ------ | -------- | ------- |
+| POST | `/api/auth/register` | Public: create a NEW organization + its first `admin` user (one transaction) |
+| POST | `/api/auth/login` | Public: username + password → JWT access token + rotating refresh token |
+| POST | `/api/auth/refresh` | Public: exchange a valid refresh token for a fresh pair (rotated) |
+| POST | `/api/auth/logout` | Auth: invalidate the presented refresh token |
+| GET | `/api/auth/me` | Auth: current user profile (from the verified token) |
+| POST | `/api/users` | Admin-only: create a staff user in the caller's own org |
 | GET | `/api/patients/check-duplicate?mobile=\|q=` | Duplicate detection during registration |
 | POST | `/api/patients` | Create patient; auto-generates `patientUid` (`PREFIX-YYYY-NNNN`, collision-safe) |
 | GET | `/api/masters/tests/search?q=` | Test typeahead (id, code, name, price, sample type) |
@@ -80,7 +87,7 @@ Secrets are managed via the Freebuff Keys UI in hosted environments; never commi
 
 - **Server-side pricing** — the order payload carries no prices; `forbidNonWhitelisted` rejects any stray price field, and client-sent `subtotal`/`total` are cross-checked and rejected on mismatch.
 - **Snapshot principle** — `OrderTest` stores `snapshottedPrice`/`testNameSnapshot`/`snapshottedUnit` (and the Stage 2.5 result snapshots) at order time; never re-read live afterwards.
-- **Fail-closed multi-tenancy** — a Prisma extension throws on any tenant-scoped query without a tenant context; the HTTP layer runs requests under the `x-organization-id` header or `DEFAULT_ORG_ID`.
+- **Fail-closed multi-tenancy** — a Prisma extension throws on any tenant-scoped query without a tenant context; since Stage 7 the tenant (and the real actor for every `createdBy`/`collectedBy`/`verifiedBy`/`approvedBy` stamp) comes from the verified access-token JWT, and the spoofable `x-organization-id` header is gone.
 - **Derived rollups** — `Order.status` is computed from `OrderTest` statuses (all new orders start `billed`).
 - **Exact split validation** — payment splits must sum exactly to the amount being paid.
 - **Package pricing** — a package bills at its OWN `packagePrice` (a bundled panel is priced independently of its parts). One `OrderTest` row per constituent test is still created (needed for Stage 2 result entry), with `packagePrice` distributed across those rows proportionally to each test's standalone price, so the snapshot sum always equals `packagePrice`. The order/invoice total never uses the sum of standalone `currentPrice` values.

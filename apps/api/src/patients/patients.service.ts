@@ -1,6 +1,5 @@
 import { BadRequestException, Injectable } from '@nestjs/common';
 import { Patient, Prisma } from '@prisma/client';
-import { SYSTEM_USER_ID } from '../common/constants';
 import { PrismaService } from '../prisma/prisma.service';
 import { TenantContextService } from '../prisma/tenant-context.service';
 import { CheckDuplicateQueryDto } from './dto/check-duplicate-query.dto';
@@ -111,7 +110,7 @@ export class PatientsService {
         address: input.address ?? null,
         externalMrn: input.externalMrn ?? null,
         abhaNumber: input.abhaNumber ?? null,
-        createdBy: SYSTEM_USER_ID,
+        createdBy: this.tenant.requireUserId(),
       },
     });
   }

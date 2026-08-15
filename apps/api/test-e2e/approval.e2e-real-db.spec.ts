@@ -3,9 +3,9 @@ import { Test } from '@nestjs/testing';
 import { PrismaClient, OrderTestStatus } from '@prisma/client';
 import request from 'supertest';
 import { AppModule } from '../src/app.module';
-import { SYSTEM_USER_ID } from '../src/common/constants';
 import { TenantContextError, TenantContextService } from '../src/prisma/tenant-context.service';
 import { ApprovalService } from '../src/approval/approval.service';
+import { bearer, loginAdmin, registerOrgAdmin } from './test-helpers';
 
 /**
  * REAL-DATABASE Stage 5 (Approval) suite — same bar as every prior stage.
@@ -30,13 +30,15 @@ import { ApprovalService } from '../src/approval/approval.service';
  *   - tenant fail-closed: no context throws; cross-tenant queue is empty and
  *     cross-tenant approve/reject attempts are safe no-ops.
  */
-const ORG = 'org_demo';
-
 describe('Stage 5 real-DB verification — approval', () => {
   let app: INestApplication;
   let approvalService: ApprovalService;
   let tenant: TenantContextService;
   const plain = new PrismaClient();
+
+  let authHeaders: Record<string, string>;
+  let otherAuthHeaders: Record<string, string>;
+  let adminUserId: string;
 
   let tGlu: string; // V5 Glucose — serum, 70-99, critical 40-400, unit mg/dL
   let tHba: string; // V5 HbA1c — serum, 4-6, critical 3-8
@@ -66,16 +68,21 @@ describe('Stage 5 real-DB verification — approval', () => {
     approvalService = app.get(ApprovalService);
     tenant = app.get(TenantContextService);
 
+    const admin = await loginAdmin(app);
+    authHeaders = bearer(admin.accessToken);
+    adminUserId = admin.userId;
+    otherAuthHeaders = bearer((await registerOrgAdmin(app, 'approval')).accessToken);
+
     await plain.$executeRawUnsafe(
       `TRUNCATE "PaymentSplit", "Payment", "Invoice", "OrderTest", "Sample", "Order", "Patient", "UidCounter" CASCADE`,
     );
 
-    const stSerum = await http().post('/api/masters/sample-types').set('x-organization-id', ORG).send({ name: 'Serum Tube V5' });
+    const stSerum = await http().post('/api/masters/sample-types').set(authHeaders).send({ name: 'Serum Tube V5' });
     expect(stSerum.status).toBe(201);
 
     const glu = await http()
       .post('/api/masters/tests')
-      .set('x-organization-id', ORG)
+      .set(authHeaders)
       .send({
         testCode: 'V5-GLU',
         testName: 'V5 Glucose',
@@ -89,7 +96,7 @@ describe('Stage 5 real-DB verification — approval', () => {
       });
     const hba = await http()
       .post('/api/masters/tests')
-      .set('x-organization-id', ORG)
+      .set(authHeaders)
       .send({
         testCode: 'V5-HBA',
         testName: 'V5 HbA1c',
@@ -107,7 +114,7 @@ describe('Stage 5 real-DB verification — approval', () => {
     const mkOrder = async (name: string, mobile: string, dob: string, testIds: string[]) => {
       const res = await http()
         .post('/api/orders')
-        .set('x-organization-id', ORG)
+        .set(authHeaders)
         .send({ patient: { firstName: name, lastName: 'Approve', gender: 'female', mobile, dob }, testIds, billing: {} });
       expect(res.status).toBe(201);
       return res.body.id as string;
@@ -129,11 +136,11 @@ describe('Stage 5 real-DB verification — approval', () => {
     // stays UNCOLLECTED — its test remains pending forever in this suite.
     for (const orderId of [orderAId, orderBId, orderCId, orderEId]) {
       const sample = await plain.sample.findFirst({ where: { orderId } });
-      await http().put(`/api/samples/${sample!.id}/collect`).set('x-organization-id', ORG).expect(200);
+      await http().put(`/api/samples/${sample!.id}/collect`).set(authHeaders).expect(200);
     }
 
     const enter = (orderId: string, entries: Array<{ orderTestId: string; resultValue: string }>) =>
-      http().put(`/api/orders/${orderId}/results`).set('x-organization-id', ORG).send({ entries }).expect(200);
+      http().put(`/api/orders/${orderId}/results`).set(authHeaders).send({ entries }).expect(200);
 
     await enter(orderCId, [{ orderTestId: otC, resultValue: '5.2' }]);
     await enter(orderBId, [
@@ -150,7 +157,7 @@ describe('Stage 5 real-DB verification — approval', () => {
   });
 
   it('approval queue is empty before anything is verified', async () => {
-    const res = await http().get('/api/approval-queue').set('x-organization-id', ORG);
+    const res = await http().get('/api/approval-queue').set(authHeaders);
     expect(res.status).toBe(200);
     expect(res.body).toEqual([]);
   });
@@ -163,14 +170,14 @@ describe('Stage 5 real-DB verification — approval', () => {
       const tests = await plain.orderTest.findMany({ where: { orderId } });
       const res = await http()
         .put(`/api/orders/${orderId}/verify`)
-        .set('x-organization-id', ORG)
+        .set(authHeaders)
         .send({ orderTestIds: tests.map((t) => t.id) });
       expect(res.status).toBe(200);
       expect(res.body.verified).toHaveLength(tests.length);
       await sleep(15);
     }
 
-    const res = await http().get('/api/approval-queue').set('x-organization-id', ORG);
+    const res = await http().get('/api/approval-queue').set(authHeaders);
     expect(res.status).toBe(200);
     const queue = res.body as Array<{
       orderId: string;
@@ -203,7 +210,7 @@ describe('Stage 5 real-DB verification — approval', () => {
   });
 
   it('approve-review returns the FULL sheet (shared shape) PLUS the live-preview payload', async () => {
-    const res = await http().get(`/api/orders/${orderBId}/approve-review`).set('x-organization-id', ORG);
+    const res = await http().get(`/api/orders/${orderBId}/approve-review`).set(authHeaders);
     expect(res.status).toBe(200);
     expect(res.body.order.id).toBe(orderBId);
     expect(res.body.patient.firstName).toBe('Beta');
@@ -228,7 +235,7 @@ describe('Stage 5 real-DB verification — approval', () => {
     expect(glu.resultValue).toBe('92');
     expect(glu.unit).toBe('mg/dL');
     expect(glu.status).toBe('verified');
-    expect(glu.verifiedBy).toBe(SYSTEM_USER_ID);
+    expect(glu.verifiedBy).toBe(adminUserId);
     expect(glu.approvedBy).toBeNull();
     expect(glu.approvedAt).toBeNull();
     expect(glu.approvalSignatureStamp).toBeNull();
@@ -237,10 +244,10 @@ describe('Stage 5 real-DB verification — approval', () => {
     // Live-preview payload: letterhead (org name), signature ref, QR placeholder.
     expect(res.body.preview.labName).toBe('Thulir Demo Lab');
     expect(res.body.preview.labAddress).toBeNull(); // Settings printable details are a later stage
-    expect(res.body.preview.signatureRef).toBe(SYSTEM_USER_ID);
+    expect(res.body.preview.signatureRef).toBe(adminUserId);
     expect(res.body.preview.verificationCode).toMatch(/^THU-VR-[0-9A-Z]+-[0-9A-F]{4}$/);
     // Deterministic: same order → same code across calls.
-    const again = await http().get(`/api/orders/${orderBId}/approve-review`).set('x-organization-id', ORG);
+    const again = await http().get(`/api/orders/${orderBId}/approve-review`).set(authHeaders);
     expect(again.body.preview.verificationCode).toBe(res.body.preview.verificationCode);
   });
 
@@ -248,7 +255,7 @@ describe('Stage 5 real-DB verification — approval', () => {
     const before = new Date();
     const res = await http()
       .put(`/api/orders/${orderAId}/approve`)
-      .set('x-organization-id', ORG)
+      .set(authHeaders)
       .send({ orderTestIds: [otA] });
     expect(res.status).toBe(200);
     expect(res.body.approved).toHaveLength(1);
@@ -260,12 +267,12 @@ describe('Stage 5 real-DB verification — approval', () => {
 
     const row = await plain.orderTest.findUnique({ where: { id: otA } });
     expect(row!.status).toBe(OrderTestStatus.approved);
-    expect(row!.approvedBy).toBe(SYSTEM_USER_ID);
+    expect(row!.approvedBy).toBe(adminUserId);
     expect(row!.approvedAt!.getTime()).toBeGreaterThanOrEqual(before.getTime());
     expect(row!.approvalSignatureStamp).toMatch(/^[0-9A-F]{16}$/);
     // The approve never touches the result value or verify metadata.
     expect(row!.resultValue).toBe('95');
-    expect(row!.verifiedBy).toBe(SYSTEM_USER_ID);
+    expect(row!.verifiedBy).toBe(adminUserId);
     expect(row!.verifyRejectedNote).toBeNull();
 
     const order = await plain.order.findUnique({ where: { id: orderAId } });
@@ -277,7 +284,7 @@ describe('Stage 5 real-DB verification — approval', () => {
     // First approve just one (otBGlu), then batch [otBGlu, otBHba]: the
     // already-approved row is reported skipped (0 rows) and its stamp is NOT
     // overwritten, the still-verified row lands.
-    const first = await http().put(`/api/orders/${orderBId}/approve`).set('x-organization-id', ORG).send({ orderTestIds: [otBGlu] });
+    const first = await http().put(`/api/orders/${orderBId}/approve`).set(authHeaders).send({ orderTestIds: [otBGlu] });
     expect(first.status).toBe(200);
     expect(first.body.approved).toHaveLength(1);
     expect(first.body.orderStatus).toBe('partially_approved'); // one approved, one still verified
@@ -286,7 +293,7 @@ describe('Stage 5 real-DB verification — approval', () => {
 
     const res = await http()
       .put(`/api/orders/${orderBId}/approve`)
-      .set('x-organization-id', ORG)
+      .set(authHeaders)
       .send({ orderTestIds: [otBGlu, otBHba] });
     expect(res.status).toBe(200);
     expect(res.body.approved).toHaveLength(1);
@@ -310,7 +317,7 @@ describe('Stage 5 real-DB verification — approval', () => {
   it('reject-back-to-verify: approved row → SAME entered state, ALL metadata cleared, resultValue INTACT, 409 when not verified/approved', async () => {
     const rejected = await http()
       .put(`/api/orders/${orderBId}/reject-back-to-verify`)
-      .set('x-organization-id', ORG)
+      .set(authHeaders)
       .send({ orderTestId: otBGlu, reason: 'Value inconsistent with clinical picture' });
     expect(rejected.status).toBe(200);
     expect(rejected.body).toEqual(
@@ -336,7 +343,7 @@ describe('Stage 5 real-DB verification — approval', () => {
     // Second reject-back on the now-entered row → 409, never a silent no-op.
     const again = await http()
       .put(`/api/orders/${orderBId}/reject-back-to-verify`)
-      .set('x-organization-id', ORG)
+      .set(authHeaders)
       .send({ orderTestId: otBGlu, reason: 'again' });
     expect(again.status).toBe(409);
     expect(again.body.message).toContain('V5 Glucose');
@@ -345,8 +352,8 @@ describe('Stage 5 real-DB verification — approval', () => {
   it('CONCURRENCY: two simultaneous approve requests on the same verified row → exactly one lands, one skipped', async () => {
     // otC (order C) is still verified — nothing has approved it yet.
     const [a, b] = await Promise.all([
-      http().put(`/api/orders/${orderCId}/approve`).set('x-organization-id', ORG).send({ orderTestIds: [otC] }),
-      http().put(`/api/orders/${orderCId}/approve`).set('x-organization-id', ORG).send({ orderTestIds: [otC] }),
+      http().put(`/api/orders/${orderCId}/approve`).set(authHeaders).send({ orderTestIds: [otC] }),
+      http().put(`/api/orders/${orderCId}/approve`).set(authHeaders).send({ orderTestIds: [otC] }),
     ]);
     expect(a.status).toBe(200);
     expect(b.status).toBe(200);
@@ -366,12 +373,12 @@ describe('Stage 5 real-DB verification — approval', () => {
   });
 
   it('validation: empty approve batch and missing reject reason are rejected (400)', async () => {
-    const empty = await http().put(`/api/orders/${orderAId}/approve`).set('x-organization-id', ORG).send({ orderTestIds: [] });
+    const empty = await http().put(`/api/orders/${orderAId}/approve`).set(authHeaders).send({ orderTestIds: [] });
     expect(empty.status).toBe(400);
 
     const noReason = await http()
       .put(`/api/orders/${orderBId}/reject-back-to-verify`)
-      .set('x-organization-id', ORG)
+      .set(authHeaders)
       .send({ orderTestId: otBHba, reason: '' });
     expect(noReason.status).toBe(400);
   });
@@ -382,11 +389,11 @@ describe('Stage 5 real-DB verification — approval', () => {
 
     // Order E is STILL verified (never approved in this suite) → the same-
     // tenant queue shows it, the cross-tenant queue is empty (no leak).
-    const sameQueue = await http().get('/api/approval-queue').set('x-organization-id', ORG);
+    const sameQueue = await http().get('/api/approval-queue').set(authHeaders);
     expect(sameQueue.status).toBe(200);
     expect(sameQueue.body.map((q: { orderId: string }) => q.orderId)).toEqual([orderEId]);
 
-    const otherQueue = await http().get('/api/approval-queue').set('x-organization-id', 'org_other');
+    const otherQueue = await http().get('/api/approval-queue').set(otherAuthHeaders);
     expect(otherQueue.status).toBe(200);
     expect(otherQueue.body).toEqual([]);
 
@@ -399,7 +406,7 @@ describe('Stage 5 real-DB verification — approval', () => {
     // rows affected → reported skipped, row unchanged (safe, not a leak).
     const otherApprove = await http()
       .put(`/api/orders/${orderEId}/approve`)
-      .set('x-organization-id', 'org_other')
+      .set(otherAuthHeaders)
       .send({ orderTestIds: [otE] });
     expect(otherApprove.status).toBe(200);
     expect(otherApprove.body.approved).toHaveLength(0);
@@ -408,7 +415,7 @@ describe('Stage 5 real-DB verification — approval', () => {
     // Cross-tenant reject-back on order B's approved row → 409, row unchanged.
     const otherReject = await http()
       .put(`/api/orders/${orderBId}/reject-back-to-verify`)
-      .set('x-organization-id', 'org_other')
+      .set(otherAuthHeaders)
       .send({ orderTestId: otBHba, reason: 'nope' });
     expect(otherReject.status).toBe(409);
 

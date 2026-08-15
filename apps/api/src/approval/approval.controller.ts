@@ -1,4 +1,6 @@
 import { Body, Controller, Get, Param, Put } from '@nestjs/common';
+import { Role } from '@prisma/client';
+import { Roles } from '../auth/roles.decorator';
 import { ApprovalService } from './approval.service';
 import { ApproveOrderDto, RejectBackToVerifyDto } from './dto/approval-order.dto';
 
@@ -8,12 +10,12 @@ import { ApproveOrderDto, RejectBackToVerifyDto } from './dto/approval-order.dto
  * route; the approve-review/approve/reject routes live under /orders/:id like
  * the Stage 3 results and Stage 4 verify routes.
  *
- * NOTE: role gating (pathologist/admin/manager) is documented in the stage
- * spec but cannot be ENFORCED yet — the app has no auth middleware (all
- * user-scoped columns are stamped with SYSTEM_USER_ID until the auth stage
- * lands, the established pattern since Stage 1). The endpoint-level role gate
- * arrives with auth; the tenant scoping here is already fail-closed.
+ * Role gate (Stage 7, now ENFORCED — the pre-auth "documented but not
+ * enforced" note below is obsolete): the pathologist's final gate —
+ * pathologist/admin/lab_manager only, exactly the roles documented in the
+ * stage spec. Every other role gets a 403.
  */
+@Roles(Role.pathologist, Role.admin, Role.lab_manager)
 @Controller()
 export class ApprovalController {
   constructor(private readonly approvalService: ApprovalService) {}

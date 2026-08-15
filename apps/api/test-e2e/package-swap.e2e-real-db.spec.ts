@@ -3,6 +3,7 @@ import { Test } from '@nestjs/testing';
 import { PrismaClient } from '@prisma/client';
 import request from 'supertest';
 import { AppModule } from '../src/app.module';
+import { bearer, loginAdmin } from './test-helpers';
 
 /**
  * REAL-DATABASE Stage 1 follow-up 2 (package-vs-package overlap) suite — same
@@ -28,11 +29,10 @@ import { AppModule } from '../src/app.module';
  *   3. a direct both-packages request (bypassing the frontend) is rejected
  *      server-side with a clear error and nothing persisted.
  */
-const ORG = 'org_demo';
-
 describe('Stage 1 follow-up 2 real-DB verification — package-vs-package swap', () => {
   let app: INestApplication;
   const plain = new PrismaClient();
+  let authHeaders: Record<string, string>;
 
   let edtaTypeId: string;
   let serumTypeId: string;
@@ -57,23 +57,26 @@ describe('Stage 1 follow-up 2 real-DB verification — package-vs-package swap',
     app.useGlobalPipes(new ValidationPipe({ whitelist: true, forbidNonWhitelisted: true, transform: true }));
     await app.init();
 
+    const admin = await loginAdmin(app);
+    authHeaders = bearer(admin.accessToken);
+
     // Wipe transactional data so the swap assertions see exactly what THIS
     // suite created (same pattern as the samples spec).
     await plain.$executeRawUnsafe(
       `TRUNCATE "PaymentSplit", "Payment", "Invoice", "OrderTest", "Sample", "Order", "Patient", "UidCounter" CASCADE`,
     );
 
-    const edta = await http().post('/api/masters/sample-types').set('x-organization-id', ORG).send({ name: 'EDTA Tube' });
+    const edta = await http().post('/api/masters/sample-types').set(authHeaders).send({ name: 'EDTA Tube' });
     expect(edta.status).toBe(201);
     edtaTypeId = edta.body.id;
-    const serum = await http().post('/api/masters/sample-types').set('x-organization-id', ORG).send({ name: 'Serum' });
+    const serum = await http().post('/api/masters/sample-types').set(authHeaders).send({ name: 'Serum' });
     expect(serum.status).toBe(201);
     serumTypeId = serum.body.id;
 
     const mkTest = async (testCode: string, testName: string, price: number, sampleTypeId: string, dedicated: boolean) => {
       const res = await http()
         .post('/api/masters/tests')
-        .set('x-organization-id', ORG)
+        .set(authHeaders)
         .send({
           testCode,
           testName,
@@ -94,7 +97,7 @@ describe('Stage 1 follow-up 2 real-DB verification — package-vs-package swap',
     const mkPkg = async (packageName: string, packagePrice: number, testIds: string[]) => {
       const res = await http()
         .post('/api/masters/packages')
-        .set('x-organization-id', ORG)
+        .set(authHeaders)
         .send({ packageName, packagePrice, testIds });
       expect(res.status).toBe(201);
       return res.body.id as string;
@@ -105,7 +108,7 @@ describe('Stage 1 follow-up 2 real-DB verification — package-vs-package swap',
     const mkOrder = async (packageIds: string[], mobile: string) => {
       const res = await http()
         .post('/api/orders')
-        .set('x-organization-id', ORG)
+        .set(authHeaders)
         .send({ patient: { firstName: 'Swap', lastName: 'Case', gender: 'female', mobile, dob: '1992-02-02' }, packageIds, billing: {} });
       expect(res.status).toBe(201);
       return res.body.id as string;
@@ -174,7 +177,7 @@ describe('Stage 1 follow-up 2 real-DB verification — package-vs-package swap',
     const before = await plain.order.count();
     const res = await http()
       .post('/api/orders')
-      .set('x-organization-id', ORG)
+      .set(authHeaders)
       .send({
         patient: { firstName: 'Bypass', lastName: 'Swap', gender: 'male', mobile: '9440000003', dob: '1980-06-06' },
         packageIds: [rftPkgId, kidneyPkgId], // SWP RFT + SWP Kidney Panel share Creatinine

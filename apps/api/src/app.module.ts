@@ -1,6 +1,10 @@
-import { MiddlewareConsumer, Module, NestModule, RequestMethod } from '@nestjs/common';
+import { Module, MiddlewareConsumer, NestModule, RequestMethod } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
+import { APP_GUARD } from '@nestjs/core';
 import { ApprovalModule } from './approval/approval.module';
+import { AuthModule } from './auth/auth.module';
+import { JwtAuthGuard } from './auth/jwt-auth.guard';
+import { RolesGuard } from './auth/roles.guard';
 import { InvoicesModule } from './invoices/invoices.module';
 import { MastersModule } from './masters/masters.module';
 import { OrdersModule } from './orders/orders.module';
@@ -19,6 +23,11 @@ import { VerifyModule } from './verify/verify.module';
     ConfigModule.forRoot({ isGlobal: true }),
     SupabaseModule,
     PrismaModule,
+    // Stage 7 real auth — JwtModule is global (middleware needs JwtService),
+    // and the two guards below are registered GLOBAL (APP_GUARD): every route
+    // requires a valid access token unless marked @Public(), and every route
+    // carrying @Roles(...) is enforced with a 403 for other roles.
+    AuthModule,
     PatientsModule,
     MastersModule,
     PartiesModule,
@@ -29,6 +38,10 @@ import { VerifyModule } from './verify/verify.module';
     ApprovalModule,
     ReportsModule,
     PublicVerifyModule,
+  ],
+  providers: [
+    { provide: APP_GUARD, useClass: JwtAuthGuard },
+    { provide: APP_GUARD, useClass: RolesGuard },
   ],
 })
 export class AppModule implements NestModule {

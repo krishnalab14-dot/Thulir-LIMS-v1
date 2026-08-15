@@ -99,12 +99,12 @@ describe('order billing validation (server-side)', () => {
     function runOrder(dto: CreateOrderDto) {
       const tx = mockTx();
       $transaction.mockImplementation((cb: (t: never) => unknown) => cb(tx as never));
-      return { tx, promise: tenant.run('org_demo', () => service.createOrder(dto)) };
+      return { tx, promise: tenant.runAs({ organizationId: 'org_demo', userId: 'user_test' }, () => service.createOrder(dto)) };
     }
 
     function runOrderWith(tx: MockTx, dto: CreateOrderDto) {
       $transaction.mockImplementation((cb: (t: never) => unknown) => cb(tx as never));
-      return tenant.run('org_demo', () => service.createOrder(dto));
+      return tenant.runAs({ organizationId: 'org_demo', userId: 'user_test' }, () => service.createOrder(dto));
     }
 
     it('computes subtotal/total server-side, snapshots prices, and pays the invoice when splits are exact', async () => {
@@ -177,7 +177,7 @@ describe('order billing validation (server-side)', () => {
 
     it('rejects when neither tests nor packages are selected', async () => {
       await expect(
-        tenant.run('org_demo', () => service.createOrder(buildOrder({ testIds: [], packageIds: [] }))),
+        tenant.runAs({ organizationId: 'org_demo', userId: 'user_test' }, () => service.createOrder(buildOrder({ testIds: [], packageIds: [] }))),
       ).rejects.toThrow('At least one test or package');
     });
 
