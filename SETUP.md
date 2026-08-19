@@ -1,21 +1,21 @@
 # Thulir LIMS — Setup & Environment Guide
 
-> **THULIR03 v2 — Stage 1** · Patient Registration → Test/Package Order → Billing
+> **THULIR03 v2** · Implemented through Stage 7 (base LIMS pipeline + real auth), with inventory and analytics reserved for later stages.
 >
-> **Status: documentation only.** This repository is fresh and currently contains no application code. This document describes the setup that the Stage 1 build will follow; nothing below is implemented yet.
+> **Status:** Application code, Prisma migrations, unit tests, and real-DB verification scripts are present. This guide is retained as setup/spec documentation and should be read with the current README for the latest implemented scope.
 
 ---
 
 ## 1. Project Overview
 
-Thulir LIMS is a multi-tenant Laboratory Information Management System (LIMS). This build covers **Stage 1 only**:
+Thulir LIMS is a multi-tenant Laboratory Information Management System (LIMS). The repository now implements the base clinical workflow through report publication and authentication. The original Stage 1 scope was:
 
 - **Patient Registration** (full-page 4-step wizard)
 - **Test / Package Order** with inline billing
 - **Payment collection** against an order's invoice
 - Minimal **Masters** screens (test catalog + package creation) — just enough to seed data and verify the order flow
 
-**Explicitly out of scope for this stage** (later, separate prompts): Sample Collection, Result Entry, Verify/Approval, Reports, full Accounts/Daily-Collections UI, Inventory, Portals, QC, Analytics, Staff, Settings, Audit, and the full Test Master parameter model (result types, specifications, calculations). The `Payment`/`PaymentSplit` tables exist now so later stages need no schema change, but no Accounts UI is built.
+**Historical Stage 1 out-of-scope note:** sample collection, result entry, verify/approval, reports, auth, and portals have since been added in later stages. Full Accounts/Daily-Collections UI, Inventory, QC, Analytics, Staff management UI, Settings, and Audit remain future areas unless implemented elsewhere.
 
 ---
 
