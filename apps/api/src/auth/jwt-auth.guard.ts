@@ -15,6 +15,11 @@ import { IS_PUBLIC_KEY } from './public.decorator';
  * requires a valid `Authorization: Bearer <access-token>` unless the handler
  * (or its controller) is marked @Public(). On success it verifies the JWT and
  * attaches `req.user` for the controller/service to read.
+ *
+ * Stage 8 cross-boundary protection: tokens with `type: 'patient'` or
+ * `type: 'referrer'` are REJECTED here — they are portal-only tokens that
+ * must never authorize a staff action. Portal routes use @Public() to skip
+ * this guard and instead apply PortalJwtAuthGuard at the controller level.
  */
 @Injectable()
 export class JwtAuthGuard implements CanActivate {
@@ -47,6 +52,15 @@ export class JwtAuthGuard implements CanActivate {
       payload = await this.jwt.verifyAsync<JwtPayload>(token);
     } catch {
       throw new UnauthorizedException('Invalid or expired token');
+    }
+
+    // Stage 8: reject portal tokens on staff routes. A patient/referrer
+    // token can never authorize a staff-only action.
+    if ('type' in payload && (payload as { type?: string }).type === 'patient') {
+      throw new UnauthorizedException('Patient tokens cannot access staff routes');
+    }
+    if ('type' in payload && (payload as { type?: string }).type === 'referrer') {
+      throw new UnauthorizedException('Referrer tokens cannot access staff routes');
     }
 
     request.user = {

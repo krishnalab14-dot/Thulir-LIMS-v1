@@ -281,6 +281,14 @@ model Party {
   type           PartyType
   active         Boolean      @default(true)
 
+  // Stage 8: portal auth for referrers. Both null until an admin explicitly
+  // sets up portal access via POST /api/parties/:id/portal-access. Username
+  // is globally unique (same approach as staff User.username). Password is
+  // stored only as a bcrypt hash — never returned after the initial
+  // generation (admin sees it once, relays out-of-band).
+  portalUsername     String?  @unique
+  portalPasswordHash String?
+
   referredOrders Order[]
 
   @@index([organizationId])

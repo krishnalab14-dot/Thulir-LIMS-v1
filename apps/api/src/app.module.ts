@@ -10,6 +10,7 @@ import { MastersModule } from './masters/masters.module';
 import { OrdersModule } from './orders/orders.module';
 import { PartiesModule } from './parties/parties.module';
 import { PatientsModule } from './patients/patients.module';
+import { PortalModule } from './portal/portal.module';
 import { PrismaModule } from './prisma/prisma.module';
 import { TenantMiddleware } from './prisma/tenant.middleware';
 import { PublicVerifyModule } from './public-verify/public-verify.module';
@@ -38,6 +39,10 @@ import { VerifyModule } from './verify/verify.module';
     ApprovalModule,
     ReportsModule,
     PublicVerifyModule,
+    // Stage 8: patient/referrer self-service portals. Portal auth tokens
+    // (type: 'patient' | 'referrer') are rejected by the global JwtAuthGuard
+    // (cross-boundary protection) and accepted only by PortalJwtAuthGuard.
+    PortalModule,
   ],
   providers: [
     { provide: APP_GUARD, useClass: JwtAuthGuard },
