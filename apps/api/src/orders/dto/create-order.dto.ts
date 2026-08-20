@@ -74,6 +74,12 @@ export class OrderDetailsDto {
   @IsOptional()
   @IsBoolean()
   isUrgent?: boolean;
+
+  /** Informational — when the patient/referrer can expect the report. */
+  @IsOptional()
+  @Type(() => Date)
+  @IsDate()
+  expectedReportDate?: Date;
 }
 
 export class BillingDto {

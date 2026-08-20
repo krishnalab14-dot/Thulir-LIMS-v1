@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { api, ApiError } from '../lib/api';
 import { inr, round2 } from '../lib/format';
+import { useAuth } from '../auth/useAuth';
 import {
   packageAddConfirmMessage,
   packageSwapConfirmMessage,
@@ -170,13 +171,17 @@ export function OrderBillingStep({
   const [pkgQuery, setPkgQuery] = useState('');
   const [pkgResults, setPkgResults] = useState<PackageOption[]>([]);
   const [pkgsLoading, setPkgsLoading] = useState(false);
+  const [referralType, setReferralType] = useState<string>(''); // '' = not selected, 'self' = walk-in
   const [doctorQuery, setDoctorQuery] = useState('');
   const [doctorResults, setDoctorResults] = useState<PartyOption[]>([]);
   const [doctorsLoading, setDoctorsLoading] = useState(false);
+  const [expectedReportDate, setExpectedReportDate] = useState('');
 
   const debouncedTest = useDebounced(testQuery);
   const debouncedPkg = useDebounced(pkgQuery);
   const debouncedDoctor = useDebounced(doctorQuery);
+
+  const { user } = useAuth();
 
   // --- line items / billing state ---
   const [lines, setLines] = useState<Line[]>([]);
@@ -245,14 +250,14 @@ export function OrderBillingStep({
   }, [debouncedPkg]);
 
   useEffect(() => {
-    if (!debouncedDoctor.trim()) {
+    if (!debouncedDoctor.trim() || !referralType || referralType === 'self') {
       setDoctorResults([]);
       return;
     }
     let cancelled = false;
     setDoctorsLoading(true);
     api
-      .get<PartyOption[]>(`/parties/search?type=doctor&q=${encodeURIComponent(debouncedDoctor.trim())}`)
+      .get<PartyOption[]>(`/parties/search?type=${encodeURIComponent(referralType)}&q=${encodeURIComponent(debouncedDoctor.trim())}`)
       .then((rows) => {
         if (!cancelled) setDoctorResults(rows);
       })
@@ -265,7 +270,7 @@ export function OrderBillingStep({
     return () => {
       cancelled = true;
     };
-  }, [debouncedDoctor]);
+  }, [debouncedDoctor, referralType]);
 
   // --- derived totals (mirror the server rules: tests bill at currentPrice,
   // --- packages bill at their OWN packagePrice — see POST /api/orders) ---
@@ -518,6 +523,7 @@ export function OrderBillingStep({
         ...(referrerId ? { referrerPartyId: referrerId } : {}),
         ...(notes.trim() ? { clinicalNotes: notes.trim() } : {}),
         isUrgent: urgent,
+        ...(expectedReportDate ? { expectedReportDate: new Date(expectedReportDate) } : {}),
       },
       testIds: lines.filter((l) => l.kind === 'test').map((l) => l.id),
       packageIds: lines.filter((l) => l.kind === 'package').map((l) => l.id),
@@ -752,6 +758,17 @@ export function OrderBillingStep({
                   <TextInput type="number" min={0} max={100} step="0.01" value={discount} onChange={(e) => setDiscount(e.target.value)} className="px-2 py-1 text-right font-mono" placeholder="0" />
                 </dd>
               </div>
+              {discountPct > 0 && user && (
+                <div className="flex items-center justify-between gap-2">
+                  <dt className="text-[12px] text-slate-400">Authorized by</dt>
+                  <dd className="text-[12px] font-medium text-slate-600">
+                    <span className="inline-flex h-5 w-5 items-center justify-center rounded-full bg-brand-100 text-[9px] font-bold text-brand-700">
+                      {user.username.charAt(0).toUpperCase()}
+                    </span>
+                    {' '}{user.username}
+                  </dd>
+                </div>
+              )}
               <div className="flex justify-between border-t border-slate-100 pt-2">
                 <dt className="font-semibold text-slate-700">Total Due</dt>
                 <dd className="font-mono text-base font-bold text-brand-800">{inr(total)}</dd>
@@ -795,25 +812,68 @@ export function OrderBillingStep({
           <div className="thulir-card p-4">
             <h3 className="mb-3 text-sm font-semibold text-slate-700">Order Details</h3>
             <div className="space-y-3">
-              <Field label="Referring Doctor (optional)">
-                <Typeahead<PartyOption>
-                  placeholder="Search doctors…"
-                  query={doctorQuery}
-                  onQueryChange={setDoctorQuery}
-                  results={doctorResults}
-                  loading={doctorsLoading}
-                  onSelect={(d) => {
-                    setReferrerId(d.id);
-                    setDoctorQuery(d.name);
-                    setDoctorResults([]);
+              <Field label="Referral Type">
+                <select
+                  value={referralType}
+                  onChange={(e) => {
+                    const val = e.target.value;
+                    setReferralType(val);
+                    // Clear stale referrer selection when type changes
+                    if (val === 'self' || val === '') {
+                      setReferrerId(undefined);
+                      setDoctorQuery('');
+                      setDoctorResults([]);
+                    }
                   }}
-                  renderResult={(d) => <span className="text-[13px] text-slate-800">{d.name}</span>}
+                  className="thulir-input"
+                >
+                  <option value="">— Select —</option>
+                  <option value="self">Self / Walk-in</option>
+                  <option value="doctor">Doctor</option>
+                  <option value="hospital">Hospital</option>
+                  <option value="reference_lab">Reference Lab</option>
+                  <option value="corporate">Corporate</option>
+                  <option value="insurance_tpa">Insurance / TPA</option>
+                  <option value="staff">Staff</option>
+                </select>
+              </Field>
+
+              {referralType && referralType !== 'self' && (
+                <Field label={`Specific ${referralType.replace('_', ' ')} (optional)`}>
+                  <Typeahead<PartyOption>
+                    placeholder={`Search ${referralType.replace('_', ' ')}s…`}
+                    query={doctorQuery}
+                    onQueryChange={setDoctorQuery}
+                    results={doctorResults}
+                    loading={doctorsLoading}
+                    onSelect={(d) => {
+                      setReferrerId(d.id);
+                      setDoctorQuery(d.name);
+                      setDoctorResults([]);
+                    }}
+                    renderResult={(d) => <span className="text-[13px] text-slate-800">{d.name}</span>}
+                  />
+                </Field>
+              )}
+
+              {referralType === 'self' && (
+                <p className="text-[12px] text-slate-400">No referrer will be recorded (self / walk-in).</p>
+              )}
+
+              <Field label="Expected Report Date (optional)">
+                <input
+                  type="date"
+                  value={expectedReportDate}
+                  onChange={(e) => setExpectedReportDate(e.target.value)}
+                  className="thulir-input"
                 />
               </Field>
+
               <label className="flex items-center gap-2 text-[13px] text-slate-700">
                 <input type="checkbox" checked={urgent} onChange={(e) => setUrgent(e.target.checked)} className="h-3.5 w-3.5 rounded border-slate-300 text-brand-600 focus:ring-brand-600" />
                 Urgent order
               </label>
+
               <Field label="Clinical Notes (optional)">
                 <textarea value={notes} onChange={(e) => setNotes(e.target.value)} rows={2} className="thulir-input resize-y" placeholder="e.g. Fasting sample required" />
               </Field>

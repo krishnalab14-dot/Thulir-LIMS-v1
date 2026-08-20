@@ -139,7 +139,14 @@ export class OrdersService {
         }
       }
 
-      // 6. Create the Order, then Samples + OrderTest rows (Stage 2 / 2.1).
+      // 6. Discount authorization audit — when a discount is applied,
+      //    record which authenticated staff member authorized it (always
+      //    the current JWT user, never client-supplied). Required when
+      //    discountPercent > 0; server-side enforced regardless of client.
+      const discountPctNum = Number(discountPercent);
+      const discountAuthorizedBy = discountPctNum > 0 ? this.tenant.requireUserId() : null;
+
+      // 7. Create the Order, then Samples + OrderTest rows (Stage 2 / 2.1).
       //    Grouping rule: NON-dedicated tests share one Sample per distinct
       //    required sample type (a CBC + LFT order needing the same tube gets
       //    one Sample); each requiresDedicatedSample test gets its OWN Sample
@@ -160,6 +167,8 @@ export class OrdersService {
           discountPercent,
           totalAmount: total,
           createdBy: this.tenant.requireUserId(),
+          discountAuthorizedBy,
+          expectedReportDate: dto.orderDetails?.expectedReportDate ?? null,
         },
       });
 

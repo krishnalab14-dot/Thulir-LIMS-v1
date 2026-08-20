@@ -45,8 +45,10 @@ enum ResultType {
 enum PartyType {
   doctor
   hospital
+  reference_lab
   corporate
   insurance_tpa
+  staff
 }
 
 enum OrderStatus {
@@ -313,6 +315,16 @@ model Order {
   totalAmount      Decimal      @db.Decimal(12, 2)
   createdBy        String
   createdAt        DateTime     @default(now())
+
+  // Audit: which staff member authorized a discretionary discount (> 0).
+  // Always set server-side from the authenticated user's JWT — never
+  // trusted from the client. Required when discountPercent > 0.
+  discountAuthorizedBy String?
+
+  // Informational: when the patient/referrer can expect the report.
+  // Not enforced against anything yet — captured at registration for
+  // later display on the portal and patient communication.
+  expectedReportDate DateTime?
 
   // Stage 6: set once on the FIRST successful GET /orders/:id/report — the
   // report's issue date, distinct from approvedAt (approval can predate the
