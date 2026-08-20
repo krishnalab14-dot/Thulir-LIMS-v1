@@ -237,7 +237,7 @@ export function RegisterWizard() {
       {step === 2 && (
         <div className="thulir-card p-5">
           <h2 className="mb-4 text-base font-bold text-slate-800">Demographics</h2>
-          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5">
             <Field label="Title">
               <Select value={demographics.title} onChange={(e) => setDemographics((d) => ({ ...d, title: e.target.value }))}>
                 <option value="">—</option>
@@ -304,7 +304,7 @@ export function RegisterWizard() {
             <Field label="ABHA Number">
               <TextInput value={demographics.abhaNumber} onChange={(e) => setDemographics((d) => ({ ...d, abhaNumber: e.target.value }))} placeholder="optional" />
             </Field>
-            <Field label="Address" className="sm:col-span-2 lg:col-span-3">
+            <Field label="Address" className="sm:col-span-2 lg:col-span-3 xl:col-span-4 2xl:col-span-5">
               <TextInput value={demographics.address} onChange={(e) => setDemographics((d) => ({ ...d, address: e.target.value }))} placeholder="Street, city…" />
             </Field>
           </div>

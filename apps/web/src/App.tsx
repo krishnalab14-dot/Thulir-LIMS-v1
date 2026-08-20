@@ -93,7 +93,7 @@ export function App() {
   return (
     <div className="min-h-screen">
       {!isPublic && <NavBar />}
-      <main className={`mx-auto max-w-7xl px-4 py-5 sm:px-6 ${isPublic ? '!max-w-none !p-0' : ''}`}>
+      <main className={`mx-auto max-w-screen-2xl px-4 py-5 sm:px-6 ${isPublic ? '!max-w-none !p-0' : ''}`}>
         <Routes>
           <Route path="/login" element={<Login />} />
           <Route
