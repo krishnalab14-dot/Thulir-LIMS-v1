@@ -15,25 +15,53 @@ export class MastersService {
     private readonly tenant: TenantContextService,
   ) {}
 
-  /** Live typeahead for the order screen — minimal fields only. */
+  /** Live typeahead for the order screen — minimal fields only. Also returns matching packages so panels like CBC are discoverable from the test search. */
   async searchTests(q?: string) {
     const term = (q ?? '').trim();
-    return this.prisma.prisma.masterTest.findMany({
-      where: {
-        active: true,
-        ...(term
-          ? {
-              OR: [
-                { testCode: { contains: term, mode: 'insensitive' } },
-                { testName: { contains: term, mode: 'insensitive' } },
-              ],
-            }
-          : {}),
+    const [tests, packages] = await Promise.all([
+      this.prisma.prisma.masterTest.findMany({
+        where: {
+          active: true,
+          ...(term
+            ? {
+                OR: [
+                  { testCode: { contains: term, mode: 'insensitive' } },
+                  { testName: { contains: term, mode: 'insensitive' } },
+                ],
+              }
+            : {}),
       },
       orderBy: { testName: 'asc' },
       take: 20,
       select: { id: true, testCode: true, testName: true, currentPrice: true, requiredSampleTypeId: true },
-    });
+    }),
+      term
+        ? this.prisma.prisma.masterTestPackage.findMany({
+            where: {
+              active: true,
+              OR: [
+                { packageCode: { contains: term, mode: 'insensitive' } },
+                { packageName: { contains: term, mode: 'insensitive' } },
+              ],
+            },
+            orderBy: { packageName: 'asc' },
+            take: 10,
+            select: { id: true, packageCode: true, packageName: true, packagePrice: true },
+          })
+        : Promise.resolve([]),
+    ]);
+
+    return [
+      ...tests.map((t) => ({ ...t, kind: 'test' as const })),
+      ...packages.map((p) => ({
+        id: p.id,
+        testCode: p.packageCode,
+        testName: p.packageName,
+        currentPrice: p.packagePrice,
+        requiredSampleTypeId: null,
+        kind: 'package' as const,
+      })),
+    ];
   }
 
   /**

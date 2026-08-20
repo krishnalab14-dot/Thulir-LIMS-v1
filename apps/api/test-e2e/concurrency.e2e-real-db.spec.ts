@@ -34,6 +34,7 @@ describe('Stage 1 concurrency verification (real Postgres, Promise.all)', () => 
   let pkgId: string;
   let pkgPrice: number;
   let subtotal: number;
+  let pkgItemCount: number;
 
   let authHeaders: Record<string, string>;
 
@@ -81,6 +82,7 @@ describe('Stage 1 concurrency verification (real Postgres, Promise.all)', () => 
     standalonePrice = test.currentPrice.toNumber();
     pkgId = pkg.id;
     pkgPrice = pkg.packagePrice.toNumber();
+    pkgItemCount = pkg.items.length;
     subtotal = standalonePrice + pkgPrice;
   });
 
@@ -158,7 +160,7 @@ describe('Stage 1 concurrency verification (real Postgres, Promise.all)', () => 
     expect(bad.map((r) => `${r.status}: ${r.body?.message ?? JSON.stringify(r.body).slice(0, 160)}`)).toEqual([]);
     for (const r of results) {
       const order = r.body;
-      expect(order.orderTests).toHaveLength(4); // 1 standalone + 3 package constituents
+      expect(order.orderTests).toHaveLength(1 + pkgItemCount); // 1 standalone + package constituents
       expect(order.orderTests.every((t: { status: string }) => t.status === 'pending')).toBe(true);
       expect(order.invoice.status).toBe('paid');
       expect(Number(order.subtotal)).toBe(subtotal);
@@ -189,7 +191,7 @@ describe('Stage 1 concurrency verification (real Postgres, Promise.all)', () => 
     });
     expect(orders).toHaveLength(BATCH);
     const testRows = orders.flatMap((o) => o.orderTests);
-    expect(testRows).toHaveLength(BATCH * 4);
+    expect(testRows).toHaveLength(BATCH * (1 + pkgItemCount));
     expect(testRows.every((t) => t.status === 'pending')).toBe(true);
     expect(orders.every((o) => o.invoice!.status === 'paid')).toBe(true);
     expect(orders.flatMap((o) => o.invoice!.payments.flatMap((p) => p.splits))).toHaveLength(BATCH * 2);

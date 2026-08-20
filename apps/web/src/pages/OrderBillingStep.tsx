@@ -20,6 +20,8 @@ export interface TestOption {
   testName: string;
   currentPrice: string;
   requiredSampleTypeId: string | null;
+  /** When "package", this is a MasterTestPackage returned from the test search. */
+  kind?: 'test' | 'package';
 }
 
 export interface PackageOption {
@@ -461,9 +463,8 @@ export function OrderBillingStep({
   }
 
   function validatePayments(): string | null {
-    if (totalEntered === 0) return null;
     if (discountPct < 0 || discountPct > 100) return 'Discount must be between 0 and 100%';
-    if (totalEntered !== total) return `Total entered (${inr(totalEntered)}) must equal total due (${inr(total)})`;
+    if (totalEntered > total) return `Total entered (${inr(totalEntered)}) cannot exceed total due (${inr(total)})`;
     return null;
   }
 
@@ -579,11 +580,31 @@ export function OrderBillingStep({
                   onQueryChange={setTestQuery}
                   results={testResults}
                   loading={testsLoading}
-                  onSelect={addTest}
+                  onSelect={async (t) => {
+                    if (t.kind === 'package') {
+                      // Fetch full package details (with items) then add it.
+                      try {
+                        const pkgs = await api.get<PackageOption[]>(`/masters/packages/search?q=${encodeURIComponent(t.testName)}`);
+                        const match = pkgs.find((p) => p.id === t.id);
+                        if (match) addPackage(match);
+                      } catch {
+                        // Silently ignore — user can retry or use the Package search
+                      }
+                      setTestQuery('');
+                      setTestResults([]);
+                      return;
+                    }
+                    addTest(t);
+                  }}
                   renderResult={(t) => (
                     <>
                       <span className="min-w-0 flex-1">
-                        <span className="block truncate text-[13px] text-slate-800">{t.testName}</span>
+                        <span className="block truncate text-[13px] text-slate-800">
+                          {t.testName}
+                          {t.kind === 'package' && (
+                            <span className="ml-1.5 inline-block rounded bg-brand-100 px-1 py-0.5 text-[9px] font-semibold uppercase text-brand-700">panel</span>
+                          )}
+                        </span>
                         <span className="block text-[11px] text-slate-400">{t.testCode}</span>
                       </span>
                       <span className="shrink-0 font-mono text-[12px] font-semibold text-brand-700">{inr(t.currentPrice)}</span>
@@ -741,8 +762,8 @@ export function OrderBillingStep({
           <div className="thulir-card p-4">
             <div className="mb-2 flex items-center justify-between">
               <h3 className="text-sm font-semibold text-slate-700">Payment</h3>
-              <Badge tone={totalEntered === 0 ? 'slate' : totalEntered === total ? 'green' : 'amber'}>
-                {totalEntered === 0 ? 'No payment entered' : `Total entered ${inr(totalEntered)}`}
+              <Badge tone={totalEntered === 0 ? 'slate' : totalEntered >= total ? 'green' : 'amber'}>
+                {totalEntered === 0 ? `No payment — ${inr(total)} due` : totalEntered >= total ? 'Fully paid' : `Paid ${inr(totalEntered)} — ${inr(total - totalEntered)} due`}
               </Badge>
             </div>
             <div className="space-y-2">
@@ -764,9 +785,9 @@ export function OrderBillingStep({
                 </div>
               ))}
             </div>
-            {totalEntered > 0 && totalEntered !== total && (
+            {totalEntered > 0 && totalEntered < total && (
               <p className="mt-2 text-[12px] text-amber-700">
-                Total entered must equal total due ({inr(total)}) before submitting.
+                Partial payment — {inr(total - totalEntered)} will be due after registration.
               </p>
             )}
           </div>
