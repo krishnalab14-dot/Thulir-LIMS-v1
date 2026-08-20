@@ -131,7 +131,7 @@ export function RegisterWizard() {
   }
 
   return (
-    <div className="mx-auto max-w-5xl">
+    <div className="w-full">
       {/* Step indicator */}
       <div className="mb-5 flex items-center justify-between">
         {STEPS.map((s, i) => {
