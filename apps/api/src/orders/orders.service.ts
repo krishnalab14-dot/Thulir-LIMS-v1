@@ -288,6 +288,14 @@ export class OrdersService {
           patient: true,
           orderTests: true,
           invoice: { include: { payments: { include: { splits: true } } } },
+          samples: {
+            orderBy: { createdAt: 'asc' },
+            select: {
+              id: true,
+              barcodeValue: true,
+              sampleType: { select: { name: true, code: true } },
+            },
+          },
         },
       });
     });

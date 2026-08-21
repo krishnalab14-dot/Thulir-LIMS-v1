@@ -490,6 +490,24 @@ export function RegisterWizard() {
             </div>
           </div>
 
+          {/* Sample IDs (barcodes created during order) */}
+          {result.order?.samples && result.order.samples.length > 0 && (
+            <div className="thulir-card p-4">
+              <h3 className="mb-2 text-[12px] font-semibold uppercase tracking-wide text-slate-500">Sample IDs</h3>
+              <div className="space-y-1.5">
+                {result.order.samples.map((s) => (
+                  <div key={s.id} className="flex items-center justify-between rounded-md border border-slate-100 bg-slate-50 px-3 py-1.5">
+                    <span className="text-[13px] text-slate-600">
+                      {s.sampleType.name}
+                      <span className="ml-1 text-[11px] text-slate-400">({s.sampleType.code})</span>
+                    </span>
+                    <span className="font-mono text-[13px] font-semibold text-brand-800">{s.barcodeValue}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
           {/* Printable label */}
           <div className="print-area thulir-card p-5">
             <p className="text-[11px] font-bold uppercase tracking-widest text-brand-700">Thulir Demo Lab</p>

@@ -65,6 +65,11 @@ export interface OrderResult {
     status: string;
     orderTestsCount?: number;
     invoice?: { id: string; status: string };
+    samples?: Array<{
+      id: string;
+      barcodeValue: string;
+      sampleType: { name: string; code: string };
+    }>;
   };
 }
 
