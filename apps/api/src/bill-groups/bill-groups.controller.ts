@@ -1,5 +1,6 @@
-import { Controller, Get, Param, Patch, Post } from '@nestjs/common';
+import { Body, Controller, Get, Param, Patch, Post } from '@nestjs/common';
 import { BillGroupsService } from './bill-groups.service';
+import { CreateGroupPaymentDto } from './dto/create-group-payment.dto';
 
 @Controller('bill-groups')
 export class BillGroupsController {
@@ -11,7 +12,7 @@ export class BillGroupsController {
     return this.billGroups.create();
   }
 
-  /** GET /api/bill-groups/:id — fetch a BillGroup with its linked orders. */
+  /** GET /api/bill-groups/:id — fetch a BillGroup with its linked orders and combined totals. */
   @Get(':id')
   findOne(@Param('id') id: string) {
     return this.billGroups.findOne(id);
@@ -27,5 +28,11 @@ export class BillGroupsController {
   @Patch(':id/orders/:orderId/unlink')
   unlinkOrder(@Param('id') id: string, @Param('orderId') orderId: string) {
     return this.billGroups.unlinkOrder(id, orderId);
+  }
+
+  /** POST /api/bill-groups/:id/payments — distribute a payment across the group's orders. */
+  @Post(':id/payments')
+  addPayment(@Param('id') id: string, @Body() dto: CreateGroupPaymentDto) {
+    return this.billGroups.addPayment(id, dto);
   }
 }

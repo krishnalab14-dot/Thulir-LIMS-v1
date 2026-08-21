@@ -220,4 +220,238 @@ describe('Consolidated Billing — BillGroup (real-DB)', () => {
     expect(res.status).toBe(201);
     expect(res.body.billGroupId).toBe(groupId);
   });
+
+  // -----------------------------------------------------------------------
+  // §1 Combined totals
+  // -----------------------------------------------------------------------
+
+  describe('Combined totals — GET /api/bill-groups/:id', () => {
+    it('returns correct combined total for 2 orders (testA=300, testB=500)', async () => {
+      const group = await http().post('/api/bill-groups').set(authHeaders).send({});
+      const groupId = group.body.id;
+
+      const order1 = await createOrder('CT-Alpha', [testAId]); // 300
+      expect(order1.status).toBe(201);
+      await http().patch(`/api/bill-groups/${groupId}/orders/${order1.body.id}`).set(authHeaders).send({});
+
+      const order2 = await createOrder('CT-Beta', [testBId]); // 500
+      expect(order2.status).toBe(201);
+      await http().patch(`/api/bill-groups/${groupId}/orders/${order2.body.id}`).set(authHeaders).send({});
+
+      const fetched = await http().get(`/api/bill-groups/${groupId}`).set(authHeaders);
+      expect(fetched.status).toBe(200);
+      expect(fetched.body.combinedTotal).toBe(800);
+      expect(fetched.body.combinedPaid).toBe(0);
+      expect(fetched.body.combinedOutstanding).toBe(800);
+      expect(fetched.body.orders).toHaveLength(2);
+
+      // Each order should have paid/outstanding fields on its invoice
+      for (const order of fetched.body.orders) {
+        expect(order.invoice).toBeDefined();
+        expect(order.invoice.paid).toBe(0);
+        expect(order.invoice.outstanding).toBe(Number(order.invoice.totalAmount));
+      }
+    });
+
+    it('combined totals update after a per-order payment via invoices endpoint', async () => {
+      const group = await http().post('/api/bill-groups').set(authHeaders).send({});
+      const groupId = group.body.id;
+
+      const order1 = await createOrder('CT2-Alpha', [testAId]); // 300
+      expect(order1.status).toBe(201);
+      await http().patch(`/api/bill-groups/${groupId}/orders/${order1.body.id}`).set(authHeaders).send({});
+
+      const order2 = await createOrder('CT2-Beta', [testBId]); // 500
+      expect(order2.status).toBe(201);
+      await http().patch(`/api/bill-groups/${groupId}/orders/${order2.body.id}`).set(authHeaders).send({});
+
+      // Pay 100 against order1's invoice directly
+      const invoiceId = order1.body.invoice.id;
+      const payRes = await http()
+        .post(`/api/invoices/${invoiceId}/payments`)
+        .set(authHeaders)
+        .send({ splits: [{ mode: 'cash', amount: 100 }] });
+      expect(payRes.status).toBe(201);
+
+      const fetched = await http().get(`/api/bill-groups/${groupId}`).set(authHeaders);
+      expect(fetched.status).toBe(200);
+      expect(fetched.body.combinedTotal).toBe(800);
+      expect(fetched.body.combinedPaid).toBe(100);
+      expect(fetched.body.combinedOutstanding).toBe(700);
+    });
+  });
+
+  // -----------------------------------------------------------------------
+  // §2 Payment distribution — POST /api/bill-groups/:id/payments
+  // -----------------------------------------------------------------------
+
+  describe('Payment distribution — POST /api/bill-groups/:id/payments', () => {
+    it('partial payment splits correctly across 2 orders', async () => {
+      const group = await http().post('/api/bill-groups').set(authHeaders).send({});
+      const groupId = group.body.id;
+
+      const order1 = await createOrder('PD-Alpha', [testAId]); // 300
+      expect(order1.status).toBe(201);
+      await http().patch(`/api/bill-groups/${groupId}/orders/${order1.body.id}`).set(authHeaders).send({});
+
+      const order2 = await createOrder('PD-Beta', [testBId]); // 500
+      expect(order2.status).toBe(201);
+      await http().patch(`/api/bill-groups/${groupId}/orders/${order2.body.id}`).set(authHeaders).send({});
+
+      // Pay ₹400 (₹300 goes to order1, ₹100 goes to order2)
+      const payRes = await http()
+        .post(`/api/bill-groups/${groupId}/payments`)
+        .set(authHeaders)
+        .send({ splits: [{ mode: 'cash', amount: 400 }] });
+      expect(payRes.status).toBe(201);
+      expect(payRes.body.totalPaid).toBe(400);
+      expect(payRes.body.distribution).toHaveLength(2);
+      expect(payRes.body.distribution[0].distributed).toBe(300);
+      expect(payRes.body.distribution[0].newStatus).toBe('paid');
+      expect(payRes.body.distribution[1].distributed).toBe(100);
+      expect(payRes.body.distribution[1].newStatus).toBe('partial');
+
+      // Verify via GET
+      const fetched = await http().get(`/api/bill-groups/${groupId}`).set(authHeaders);
+      expect(fetched.body.combinedPaid).toBe(400);
+      expect(fetched.body.combinedOutstanding).toBe(400);
+    });
+
+    it('full payment across 2 orders (exact total)', async () => {
+      const group = await http().post('/api/bill-groups').set(authHeaders).send({});
+      const groupId = group.body.id;
+
+      const order1 = await createOrder('PD2-Alpha', [testAId]); // 300
+      expect(order1.status).toBe(201);
+      await http().patch(`/api/bill-groups/${groupId}/orders/${order1.body.id}`).set(authHeaders).send({});
+
+      const order2 = await createOrder('PD2-Beta', [testBId]); // 500
+      expect(order2.status).toBe(201);
+      await http().patch(`/api/bill-groups/${groupId}/orders/${order2.body.id}`).set(authHeaders).send({});
+
+      // Pay ₹800 (full balance — ₹300 + ₹500)
+      const payRes = await http()
+        .post(`/api/bill-groups/${groupId}/payments`)
+        .set(authHeaders)
+        .send({ splits: [{ mode: 'cash', amount: 800 }] });
+      expect(payRes.status).toBe(201);
+      expect(payRes.body.totalPaid).toBe(800);
+      expect(payRes.body.distribution).toHaveLength(2);
+      expect(payRes.body.distribution[0].newStatus).toBe('paid');
+      expect(payRes.body.distribution[1].newStatus).toBe('paid');
+
+      const fetched = await http().get(`/api/bill-groups/${groupId}`).set(authHeaders);
+      expect(fetched.body.combinedPaid).toBe(800);
+      expect(fetched.body.combinedOutstanding).toBe(0);
+    });
+
+    it('multi-mode split distributes proportionally', async () => {
+      const group = await http().post('/api/bill-groups').set(authHeaders).send({});
+      const groupId = group.body.id;
+
+      const order1 = await createOrder('PD3-Alpha', [testAId]); // 300
+      expect(order1.status).toBe(201);
+      await http().patch(`/api/bill-groups/${groupId}/orders/${order1.body.id}`).set(authHeaders).send({});
+
+      const order2 = await createOrder('PD3-Beta', [testBId]); // 500
+      expect(order2.status).toBe(201);
+      await http().patch(`/api/bill-groups/${groupId}/orders/${order2.body.id}`).set(authHeaders).send({});
+
+      // Pay ₹400 with ₹300 cash + ₹100 UPI
+      const payRes = await http()
+        .post(`/api/bill-groups/${groupId}/payments`)
+        .set(authHeaders)
+        .send({ splits: [{ mode: 'cash', amount: 300 }, { mode: 'upi', amount: 100 }] });
+      expect(payRes.status).toBe(201);
+      expect(payRes.body.totalPaid).toBe(400);
+
+      // Verify per-order payment splits exist
+      const fetched = await http().get(`/api/bill-groups/${groupId}`).set(authHeaders);
+      expect(fetched.body.combinedPaid).toBe(400);
+    });
+
+    it('rejects payment exceeding group outstanding balance', async () => {
+      const group = await http().post('/api/bill-groups').set(authHeaders).send({});
+      const groupId = group.body.id;
+
+      const order1 = await createOrder('PD4-Alpha', [testAId]); // 300
+      expect(order1.status).toBe(201);
+      await http().patch(`/api/bill-groups/${groupId}/orders/${order1.body.id}`).set(authHeaders).send({});
+
+      // Try to pay ₹500 against a ₹300 group
+      const payRes = await http()
+        .post(`/api/bill-groups/${groupId}/payments`)
+        .set(authHeaders)
+        .send({ splits: [{ mode: 'cash', amount: 500 }] });
+      expect(payRes.status).toBe(400);
+    });
+
+    it('rejects payment on empty group (no linked orders)', async () => {
+      const group = await http().post('/api/bill-groups').set(authHeaders).send({});
+      const groupId = group.body.id;
+
+      const payRes = await http()
+        .post(`/api/bill-groups/${groupId}/payments`)
+        .set(authHeaders)
+        .send({ splits: [{ mode: 'cash', amount: 100 }] });
+      expect(payRes.status).toBe(400);
+    });
+  });
+
+  // -----------------------------------------------------------------------
+  // §3 Ungrouped order isolation
+  // -----------------------------------------------------------------------
+
+  describe('Ungrouped order isolation', () => {
+    it('payment against a group does not affect an ungrouped order', async () => {
+      const group = await http().post('/api/bill-groups').set(authHeaders).send({});
+      const groupId = group.body.id;
+
+      const groupedOrder = await createOrder('ISO-Grouped', [testAId]); // 300
+      expect(groupedOrder.status).toBe(201);
+      await http().patch(`/api/bill-groups/${groupId}/orders/${groupedOrder.body.id}`).set(authHeaders).send({});
+
+      const ungroupedOrder = await createOrder('ISO-Ungrouped', [testBId]); // 500
+      expect(ungroupedOrder.status).toBe(201);
+      // intentionally NOT linked to any bill group
+
+      // Pay the full group balance (300)
+      const payRes = await http()
+        .post(`/api/bill-groups/${groupId}/payments`)
+        .set(authHeaders)
+        .send({ splits: [{ mode: 'cash', amount: 300 }] });
+      expect(payRes.status).toBe(201);
+
+      // Verify: grouped order is paid
+      const groupedFetched = await http().get(`/api/bill-groups/${groupId}`).set(authHeaders);
+      expect(groupedFetched.body.combinedPaid).toBe(300);
+      expect(groupedFetched.body.combinedOutstanding).toBe(0);
+
+      // Verify: ungrouped order's invoice is still fully due
+      const ungroupedInvoice = await plain.invoice.findFirst({
+        where: { orderId: ungroupedOrder.body.id },
+      });
+      expect(ungroupedInvoice).toBeDefined();
+      expect(ungroupedInvoice!.status).toBe('due');
+
+      // Verify: no payments exist for the ungrouped order's invoice
+      const ungroupedPayments = await plain.payment.findMany({
+        where: { invoiceId: ungroupedInvoice!.id },
+      });
+      expect(ungroupedPayments).toHaveLength(0);
+    });
+
+    it('ungrouped order does not appear in any bill group', async () => {
+      const group = await http().post('/api/bill-groups').set(authHeaders).send({});
+      const groupId = group.body.id;
+
+      const order = await createOrder('ISO2-Standalone', [testAId]);
+      expect(order.status).toBe(201);
+      // Not linked to any group
+
+      const fetched = await http().get(`/api/bill-groups/${groupId}`).set(authHeaders);
+      expect(fetched.status).toBe(200);
+      expect(fetched.body.orders).toHaveLength(0);
+    });
+  });
 });
