@@ -326,6 +326,21 @@ model Order {
   // later display on the portal and patient communication.
   expectedReportDate DateTime?
 
+  // §1 Scheduled collection estimate — when the patient is expected to
+  // come back for sample collection (NOT the real collection timestamp,
+  // which is Stage 2's Sample.collectedAt). Purely informational.
+  scheduledCollectionAt DateTime?
+
+  // §3 Inpatient context (hospital-use fields). Collapsed by default in
+  // the Demographics step — not shown for routine lab walk-ins.
+  patientType String?   // e.g. "IP", "OP"
+  wardDesc    String?
+  bedNo       String?
+  ipOpNo      String?
+
+  // §4 Source — simple lead-tracking: "Walk-in", "Referral", etc.
+  source String?
+
   // Stage 6: set once on the FIRST successful GET /orders/:id/report — the
   // report's issue date, distinct from approvedAt (approval can predate the
   // first print by hours/days). Displayed on the report as "Report issued"

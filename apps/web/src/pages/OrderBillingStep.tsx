@@ -48,6 +48,11 @@ export interface PatientInfoForOrder {
   mobile?: string;
   dob?: string;
   ageAtRegistration?: number;
+  // §3 Inpatient context fields (passed from Demographics step)
+  patientType?: string;
+  wardDesc?: string;
+  bedNo?: string;
+  ipOpNo?: string;
 }
 
 export interface OrderResult {
@@ -176,6 +181,8 @@ export function OrderBillingStep({
   const [doctorResults, setDoctorResults] = useState<PartyOption[]>([]);
   const [doctorsLoading, setDoctorsLoading] = useState(false);
   const [expectedReportDate, setExpectedReportDate] = useState('');
+  const [scheduledCollectionAt, setScheduledCollectionAt] = useState('');
+  const [source, setSource] = useState('');
 
   const debouncedTest = useDebounced(testQuery);
   const debouncedPkg = useDebounced(pkgQuery);
@@ -524,6 +531,13 @@ export function OrderBillingStep({
         ...(notes.trim() ? { clinicalNotes: notes.trim() } : {}),
         isUrgent: urgent,
         ...(expectedReportDate ? { expectedReportDate: new Date(expectedReportDate) } : {}),
+        ...(scheduledCollectionAt ? { scheduledCollectionAt: new Date(scheduledCollectionAt) } : {}),
+        ...(source ? { source } : {}),
+        // §3 Inpatient fields passed from Demographics step
+        ...(patientInfo.patientType ? { patientType: patientInfo.patientType } : {}),
+        ...(patientInfo.wardDesc ? { wardDesc: patientInfo.wardDesc } : {}),
+        ...(patientInfo.bedNo ? { bedNo: patientInfo.bedNo } : {}),
+        ...(patientInfo.ipOpNo ? { ipOpNo: patientInfo.ipOpNo } : {}),
       },
       testIds: lines.filter((l) => l.kind === 'test').map((l) => l.id),
       packageIds: lines.filter((l) => l.kind === 'package').map((l) => l.id),
@@ -860,13 +874,40 @@ export function OrderBillingStep({
                 <p className="text-[12px] text-slate-400">No referrer will be recorded (self / walk-in).</p>
               )}
 
-              <Field label="Expected Report Date (optional)">
-                <input
-                  type="date"
-                  value={expectedReportDate}
-                  onChange={(e) => setExpectedReportDate(e.target.value)}
+              <div className="grid gap-3 sm:grid-cols-2">
+                <Field label="Expected Report Date (optional)">
+                  <input
+                    type="date"
+                    value={expectedReportDate}
+                    onChange={(e) => setExpectedReportDate(e.target.value)}
+                    className="thulir-input"
+                  />
+                </Field>
+                <Field label="Scheduled Collection (optional)">
+                  <input
+                    type="datetime-local"
+                    value={scheduledCollectionAt}
+                    onChange={(e) => setScheduledCollectionAt(e.target.value)}
+                    className="thulir-input"
+                  />
+                </Field>
+              </div>
+
+              <Field label="Source (optional)">
+                <select
+                  value={source}
+                  onChange={(e) => setSource(e.target.value)}
                   className="thulir-input"
-                />
+                >
+                  <option value="">— Select —</option>
+                  <option value="Walk-in">Walk-in</option>
+                  <option value="Referral">Referral</option>
+                  <option value="Online">Online</option>
+                  <option value="Corporate">Corporate</option>
+                  <option value="Insurance">Insurance</option>
+                  <option value="Camp">Camp</option>
+                  <option value="Other">Other</option>
+                </select>
               </Field>
 
               <label className="flex items-center gap-2 text-[13px] text-slate-700">

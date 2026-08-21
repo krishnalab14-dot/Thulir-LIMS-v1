@@ -169,6 +169,12 @@ export class OrdersService {
           createdBy: this.tenant.requireUserId(),
           discountAuthorizedBy,
           expectedReportDate: dto.orderDetails?.expectedReportDate ?? null,
+          scheduledCollectionAt: dto.orderDetails?.scheduledCollectionAt ?? null,
+          patientType: dto.orderDetails?.patientType ?? null,
+          wardDesc: dto.orderDetails?.wardDesc ?? null,
+          bedNo: dto.orderDetails?.bedNo ?? null,
+          ipOpNo: dto.orderDetails?.ipOpNo ?? null,
+          source: dto.orderDetails?.source ?? null,
         },
       });
 

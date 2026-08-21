@@ -80,6 +80,39 @@ export class OrderDetailsDto {
   @Type(() => Date)
   @IsDate()
   expectedReportDate?: Date;
+
+  /** §1 Estimated collection datetime (NOT the real collection — that's Stage 2). */
+  @IsOptional()
+  @Type(() => Date)
+  @IsDate()
+  scheduledCollectionAt?: Date;
+
+  /** §3 Inpatient context fields (collapsed in Demographics, passed through). */
+  @IsOptional()
+  @IsString()
+  @MaxLength(20)
+  patientType?: string; // e.g. "IP", "OP"
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(100)
+  wardDesc?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(50)
+  bedNo?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(50)
+  ipOpNo?: string;
+
+  /** §4 Source — simple lead-tracking. */
+  @IsOptional()
+  @IsString()
+  @MaxLength(100)
+  source?: string;
 }
 
 export class BillingDto {

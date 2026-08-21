@@ -40,6 +40,11 @@ const emptyDemographics = {
   address: '',
   externalMrn: '',
   abhaNumber: '',
+  // §3 Inpatient details (collapsed by default)
+  patientType: '',
+  wardDesc: '',
+  bedNo: '',
+  ipOpNo: '',
 };
 
 export function RegisterWizard() {
@@ -47,6 +52,7 @@ export function RegisterWizard() {
   const [selectedPatient, setSelectedPatient] = useState<PatientSummary | null>(null);
   const [demographics, setDemographics] = useState(emptyDemographics);
   const [result, setResult] = useState<OrderResult | null>(null);
+  const [showInpatient, setShowInpatient] = useState(false);
 
   // Step 1 — identify
   const [term, setTerm] = useState('');
@@ -123,6 +129,10 @@ export function RegisterWizard() {
         mobile: demographics.mobile,
         dob: demographics.useAge ? undefined : demographics.dob || undefined,
         ageAtRegistration: demographics.useAge ? Number(demographics.age) : undefined,
+        patientType: demographics.patientType || undefined,
+        wardDesc: demographics.wardDesc || undefined,
+        bedNo: demographics.bedNo || undefined,
+        ipOpNo: demographics.ipOpNo || undefined,
       };
 
   function onComplete(completed: OrderResult) {
@@ -307,6 +317,40 @@ export function RegisterWizard() {
             <Field label="Address" className="sm:col-span-2 lg:col-span-3 xl:col-span-4 2xl:col-span-5">
               <TextInput value={demographics.address} onChange={(e) => setDemographics((d) => ({ ...d, address: e.target.value }))} placeholder="Street, city…" />
             </Field>
+          </div>
+
+          {/* §3 Inpatient Details — collapsed by default */}
+          <div className="mt-4 border-t border-slate-100 pt-4">
+            <button
+              type="button"
+              onClick={() => setShowInpatient(!showInpatient)}
+              className="flex items-center gap-2 text-[13px] font-semibold text-slate-600 hover:text-slate-800"
+            >
+              <svg width="12" height="12" viewBox="0 0 12 12" fill="currentColor" className={`transition-transform ${showInpatient ? 'rotate-90' : ''}`}>
+                <path d="M4.5 2L9 6L4.5 10" stroke="currentColor" strokeWidth="1.5" fill="none" strokeLinecap="round" strokeLinejoin="round" />
+              </svg>
+              + Inpatient Details
+            </button>
+            {showInpatient && (
+              <div className="mt-3 grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+                <Field label="Patient Type">
+                  <Select value={demographics.patientType} onChange={(e) => setDemographics((d) => ({ ...d, patientType: e.target.value }))}>
+                    <option value="">—</option>
+                    <option value="IP">IP (In-patient)</option>
+                    <option value="OP">OP (Out-patient)</option>
+                  </Select>
+                </Field>
+                <Field label="Ward">
+                  <TextInput value={demographics.wardDesc} onChange={(e) => setDemographics((d) => ({ ...d, wardDesc: e.target.value }))} placeholder="e.g. Ward A" />
+                </Field>
+                <Field label="Bed No.">
+                  <TextInput value={demographics.bedNo} onChange={(e) => setDemographics((d) => ({ ...d, bedNo: e.target.value }))} placeholder="e.g. 12B" />
+                </Field>
+                <Field label="IP/OP No.">
+                  <TextInput value={demographics.ipOpNo} onChange={(e) => setDemographics((d) => ({ ...d, ipOpNo: e.target.value }))} placeholder="e.g. IP-2026-045" />
+                </Field>
+              </div>
+            )}
           </div>
           <div className="mt-5 flex justify-between">
             <Button onClick={() => setStep(1)}>← Back</Button>
