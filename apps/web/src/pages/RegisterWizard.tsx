@@ -2,7 +2,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { Badge, Button, EmptyState, Field, Select, Spinner, TextInput } from '../components/ui';
 import { api, ApiError } from '../lib/api';
 import { formatAge, formatDate, inr } from '../lib/format';
-import { OrderBillingStep, type OrderResult, type PatientInfoForOrder } from './OrderBillingStep';
+import { OrderBillingStep, type OrderResult, type PatientInfoForOrder, type PartyOption, Typeahead } from './OrderBillingStep';
 
 interface PatientSummary {
   id: string;
@@ -54,6 +54,13 @@ export function RegisterWizard() {
   const [result, setResult] = useState<OrderResult | null>(null);
   const [showInpatient, setShowInpatient] = useState(false);
 
+  // Step 2 — referral
+  const [referralType, setReferralType] = useState(''); // '' = not selected, 'self' = walk-in
+  const [doctorQuery, setDoctorQuery] = useState('');
+  const [doctorResults, setDoctorResults] = useState<PartyOption[]>([]);
+  const [doctorsLoading, setDoctorsLoading] = useState(false);
+  const [referrerId, setReferrerId] = useState<string | undefined>();
+
   // Step 1 — identify
   const [term, setTerm] = useState('');
   const [results, setResults] = useState<PatientSummary[]>([]);
@@ -93,11 +100,16 @@ export function RegisterWizard() {
     setTerm('');
     setResults([]);
     setSearchError('');
+    setReferralType('');
+    setDoctorQuery('');
+    setDoctorResults([]);
+    setReferrerId(undefined);
   }
 
   function pickExisting(p: PatientSummary) {
     setSelectedPatient(p);
     setStep(3); // skip demographics — link the existing patient
+    setReferrerId(undefined);
   }
 
   function demographicsValid(): string | null {
@@ -352,6 +364,58 @@ export function RegisterWizard() {
               </div>
             )}
           </div>
+          {/* Referral Type + Specific Referrer — moved from Step 3 */}
+          <div className="mt-4 border-t border-slate-100 pt-4">
+            <p className="mb-2 text-[12px] font-semibold text-slate-500 uppercase tracking-wide">Referral</p>
+            <div className="grid gap-4 sm:grid-cols-2">
+              <Field label="Referral Type">
+                <select
+                  value={referralType}
+                  onChange={(e) => {
+                    const val = e.target.value;
+                    setReferralType(val);
+                    if (val === 'self' || val === '') {
+                      setReferrerId(undefined);
+                      setDoctorQuery('');
+                      setDoctorResults([]);
+                    }
+                  }}
+                  className="thulir-input"
+                >
+                  <option value="">— Select —</option>
+                  <option value="self">Self / Walk-in</option>
+                  <option value="doctor">Doctor</option>
+                  <option value="hospital">Hospital</option>
+                  <option value="reference_lab">Reference Lab</option>
+                  <option value="corporate">Corporate</option>
+                  <option value="insurance_tpa">Insurance / TPA</option>
+                  <option value="staff">Staff</option>
+                </select>
+              </Field>
+              {referralType && referralType !== 'self' && (
+                <Field label={`Specific ${referralType.replace('_', ' ')} (optional)`}>
+                  <ReferralTypeahead
+                    referralType={referralType}
+                    query={doctorQuery}
+                    onQueryChange={setDoctorQuery}
+                    results={doctorResults}
+                    onResultsChange={setDoctorResults}
+                    loading={doctorsLoading}
+                    onLoadingChange={setDoctorsLoading}
+                    onSelect={(d) => {
+                      setReferrerId(d.id);
+                      setDoctorQuery(d.name);
+                      setDoctorResults([]);
+                    }}
+                  />
+                </Field>
+              )}
+            </div>
+            {referralType === 'self' && (
+              <p className="mt-1 text-[12px] text-slate-400">No referrer will be recorded (self / walk-in).</p>
+            )}
+          </div>
+
           <div className="mt-5 flex justify-between">
             <Button onClick={() => setStep(1)}>← Back</Button>
             <Button
@@ -377,6 +441,7 @@ export function RegisterWizard() {
       {step === 3 && (
         <OrderBillingStep
           patientInfo={patientInfo}
+          referrerId={referrerId}
           onBack={() => (selectedPatient ? setStep(1) : setStep(2))}
           onComplete={onComplete}
         />
@@ -447,5 +512,69 @@ export function RegisterWizard() {
         </div>
       )}
     </div>
+  );
+}
+
+/**
+ * Referral typeahead — encapsulates the debounced party search so the
+ * parent (RegisterWizard) doesn't need useDebounced.
+ */
+function ReferralTypeahead({
+  referralType,
+  query,
+  onQueryChange,
+  results,
+  onResultsChange,
+  loading,
+  onLoadingChange,
+  onSelect,
+}: {
+  referralType: string;
+  query: string;
+  onQueryChange: (q: string) => void;
+  results: PartyOption[];
+  onResultsChange: (r: PartyOption[]) => void;
+  loading: boolean;
+  onLoadingChange: (l: boolean) => void;
+  onSelect: (p: PartyOption) => void;
+}) {
+  const [debouncedQ, setDebouncedQ] = useState(query);
+
+  useEffect(() => {
+    const t = setTimeout(() => setDebouncedQ(query), 300);
+    return () => clearTimeout(t);
+  }, [query]);
+
+  useEffect(() => {
+    if (!debouncedQ.trim() || !referralType || referralType === 'self') {
+      onResultsChange([]);
+      return;
+    }
+    let cancelled = false;
+    onLoadingChange(true);
+    api
+      .get<PartyOption[]>(`/parties/search?type=${encodeURIComponent(referralType)}&q=${encodeURIComponent(debouncedQ.trim())}`)
+      .then((rows) => {
+        if (!cancelled) onResultsChange(rows);
+      })
+      .catch(() => {
+        if (!cancelled) onResultsChange([]);
+      })
+      .finally(() => {
+        if (!cancelled) onLoadingChange(false);
+      });
+    return () => { cancelled = true; };
+  }, [debouncedQ, referralType, onResultsChange, onLoadingChange]);
+
+  return (
+    <Typeahead<PartyOption>
+      placeholder={`Search ${referralType.replace('_', ' ')}s…`}
+      query={query}
+      onQueryChange={onQueryChange}
+      results={results}
+      loading={loading}
+      onSelect={onSelect}
+      renderResult={(d) => <span className="text-[13px] text-slate-800">{d.name}</span>}
+    />
   );
 }

@@ -101,7 +101,7 @@ function useDebounced(value: string, delay = 350) {
   return debounced;
 }
 
-function Typeahead<T extends { id: string }>({
+export function Typeahead<T extends { id: string }>({
   placeholder,
   query,
   onQueryChange,
@@ -162,12 +162,15 @@ function Typeahead<T extends { id: string }>({
 
 export function OrderBillingStep({
   patientInfo,
+  referrerId,
   onBack,
   onComplete,
 }: {
   patientInfo: PatientInfoForOrder;
   onBack: () => void;
   onComplete: (result: OrderResult) => void;
+  /** Selected referrer party ID — passed from the Demographics step. */
+  referrerId?: string;
 }) {
   // --- search state ---
   const [testQuery, setTestQuery] = useState('');
@@ -176,17 +179,12 @@ export function OrderBillingStep({
   const [pkgQuery, setPkgQuery] = useState('');
   const [pkgResults, setPkgResults] = useState<PackageOption[]>([]);
   const [pkgsLoading, setPkgsLoading] = useState(false);
-  const [referralType, setReferralType] = useState<string>(''); // '' = not selected, 'self' = walk-in
-  const [doctorQuery, setDoctorQuery] = useState('');
-  const [doctorResults, setDoctorResults] = useState<PartyOption[]>([]);
-  const [doctorsLoading, setDoctorsLoading] = useState(false);
   const [expectedReportDate, setExpectedReportDate] = useState('');
   const [scheduledCollectionAt, setScheduledCollectionAt] = useState('');
   const [source, setSource] = useState('');
 
   const debouncedTest = useDebounced(testQuery);
   const debouncedPkg = useDebounced(pkgQuery);
-  const debouncedDoctor = useDebounced(doctorQuery);
 
   const { user } = useAuth();
 
@@ -194,7 +192,6 @@ export function OrderBillingStep({
   const [lines, setLines] = useState<Line[]>([]);
   const [discount, setDiscount] = useState('');
   const [paymentAmounts, setPaymentAmounts] = useState<Record<string, string>>({ cash: '', upi: '', card: '', bank_transfer: '', insurance: '' });
-  const [referrerId, setReferrerId] = useState<string | undefined>();
   const [urgent, setUrgent] = useState(false);
   const [notes, setNotes] = useState('');
   const [error, setError] = useState('');
@@ -255,29 +252,6 @@ export function OrderBillingStep({
       cancelled = true;
     };
   }, [debouncedPkg]);
-
-  useEffect(() => {
-    if (!debouncedDoctor.trim() || !referralType || referralType === 'self') {
-      setDoctorResults([]);
-      return;
-    }
-    let cancelled = false;
-    setDoctorsLoading(true);
-    api
-      .get<PartyOption[]>(`/parties/search?type=${encodeURIComponent(referralType)}&q=${encodeURIComponent(debouncedDoctor.trim())}`)
-      .then((rows) => {
-        if (!cancelled) setDoctorResults(rows);
-      })
-      .catch(() => {
-        if (!cancelled) setDoctorResults([]);
-      })
-      .finally(() => {
-        if (!cancelled) setDoctorsLoading(false);
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [debouncedDoctor, referralType]);
 
   // --- derived totals (mirror the server rules: tests bill at currentPrice,
   // --- packages bill at their OWN packagePrice — see POST /api/orders) ---
@@ -528,6 +502,7 @@ export function OrderBillingStep({
           },
       orderDetails: {
         ...(referrerId ? { referrerPartyId: referrerId } : {}),
+
         ...(notes.trim() ? { clinicalNotes: notes.trim() } : {}),
         isUrgent: urgent,
         ...(expectedReportDate ? { expectedReportDate: new Date(expectedReportDate) } : {}),
@@ -826,54 +801,6 @@ export function OrderBillingStep({
           <div className="thulir-card p-4">
             <h3 className="mb-3 text-sm font-semibold text-slate-700">Order Details</h3>
             <div className="space-y-3">
-              <Field label="Referral Type">
-                <select
-                  value={referralType}
-                  onChange={(e) => {
-                    const val = e.target.value;
-                    setReferralType(val);
-                    // Clear stale referrer selection when type changes
-                    if (val === 'self' || val === '') {
-                      setReferrerId(undefined);
-                      setDoctorQuery('');
-                      setDoctorResults([]);
-                    }
-                  }}
-                  className="thulir-input"
-                >
-                  <option value="">— Select —</option>
-                  <option value="self">Self / Walk-in</option>
-                  <option value="doctor">Doctor</option>
-                  <option value="hospital">Hospital</option>
-                  <option value="reference_lab">Reference Lab</option>
-                  <option value="corporate">Corporate</option>
-                  <option value="insurance_tpa">Insurance / TPA</option>
-                  <option value="staff">Staff</option>
-                </select>
-              </Field>
-
-              {referralType && referralType !== 'self' && (
-                <Field label={`Specific ${referralType.replace('_', ' ')} (optional)`}>
-                  <Typeahead<PartyOption>
-                    placeholder={`Search ${referralType.replace('_', ' ')}s…`}
-                    query={doctorQuery}
-                    onQueryChange={setDoctorQuery}
-                    results={doctorResults}
-                    loading={doctorsLoading}
-                    onSelect={(d) => {
-                      setReferrerId(d.id);
-                      setDoctorQuery(d.name);
-                      setDoctorResults([]);
-                    }}
-                    renderResult={(d) => <span className="text-[13px] text-slate-800">{d.name}</span>}
-                  />
-                </Field>
-              )}
-
-              {referralType === 'self' && (
-                <p className="text-[12px] text-slate-400">No referrer will be recorded (self / walk-in).</p>
-              )}
-
               <div className="grid gap-3 sm:grid-cols-2">
                 <Field label="Expected Report Date (optional)">
                   <input
