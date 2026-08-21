@@ -169,7 +169,7 @@ export function Typeahead<T extends { id: string }>({
 export function OrderBillingStep({
   patientInfo,
   referrerId,
-  billGroupId,
+  billGroupId: _billGroupId,
   onBack,
   onComplete,
 }: {
