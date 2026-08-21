@@ -12,6 +12,8 @@ interface OrderDetailData {
   discountPercent: string;
   totalAmount: string;
   createdAt: string;
+  /** Present when this order is part of a consolidated (multi-patient) bill. */
+  billGroupId: string | null;
   patient: { patientUid: string; firstName: string; lastName: string; mobile: string };
   orderTests: { id: string; testNameSnapshot: string; status: string }[];
   invoice?: { status: string; totalAmount: string } | null;
@@ -129,6 +131,17 @@ export function OrderDetail() {
                 </Badge>
               </dd>
             </div>
+            {order.billGroupId && (
+              <div className="border-t border-slate-100 pt-1.5">
+                <Link
+                  to={`/bill-groups/${order.billGroupId}`}
+                  className="text-[13px] font-medium text-brand-700 hover:underline"
+                  title="This order is part of a multi-patient consolidated bill"
+                >
+                  View consolidated bill →
+                </Link>
+              </div>
+            )}
           </dl>
         </Card>
       </div>

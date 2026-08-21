@@ -3,6 +3,7 @@ import { ApprovalQueue } from './pages/ApprovalQueue';
 import { NavBar } from './components/NavBar';
 import { RequireAuth } from './components/RequireAuth';
 import { CollectionWorklist } from './pages/CollectionWorklist';
+import { ConsolidatedBill } from './pages/ConsolidatedBill';
 import { Login } from './pages/Login';
 import { MastersTests } from './pages/MastersTests';
 import { OrderDetail } from './pages/OrderDetail';
@@ -133,6 +134,14 @@ export function App() {
             element={
               <RequireAuth>
                 <OrderDetail />
+              </RequireAuth>
+            }
+          />
+          <Route
+            path="/bill-groups/:id"
+            element={
+              <RequireAuth>
+                <ConsolidatedBill />
               </RequireAuth>
             }
           />
