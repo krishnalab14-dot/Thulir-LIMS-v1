@@ -53,6 +53,7 @@ export function RegisterWizard() {
   const [demographics, setDemographics] = useState(emptyDemographics);
   const [result, setResult] = useState<OrderResult | null>(null);
   const [showInpatient, setShowInpatient] = useState(false);
+  const [billGroupId, setBillGroupId] = useState<string | undefined>();
 
   // Step 2 — referral
   const [referralType, setReferralType] = useState(''); // '' = not selected, 'self' = walk-in
@@ -104,6 +105,23 @@ export function RegisterWizard() {
     setDoctorQuery('');
     setDoctorResults([]);
     setReferrerId(undefined);
+    setBillGroupId(undefined);
+  }
+
+  /** Reset wizard to Step 1 for a new patient, preserving the bill group. */
+  function resetForNewPatient() {
+    setStep(1);
+    setSelectedPatient(null);
+    setDemographics(emptyDemographics);
+    setResult(null);
+    setTerm('');
+    setResults([]);
+    setSearchError('');
+    setReferralType('');
+    setDoctorQuery('');
+    setDoctorResults([]);
+    setReferrerId(undefined);
+    // billGroupId intentionally NOT cleared — carry forward for consolidated billing
   }
 
   function pickExisting(p: PatientSummary) {
@@ -149,6 +167,11 @@ export function RegisterWizard() {
 
   function onComplete(completed: OrderResult) {
     setResult(completed);
+    // Store billGroupId if the order was linked to one, or if this is the
+    // first order and the user will choose to group it
+    if (completed.billGroupId) {
+      setBillGroupId(completed.billGroupId);
+    }
     setStep(4);
   }
 
@@ -442,6 +465,7 @@ export function RegisterWizard() {
         <OrderBillingStep
           patientInfo={patientInfo}
           referrerId={referrerId}
+          billGroupId={billGroupId}
           onBack={() => (selectedPatient ? setStep(1) : setStep(2))}
           onComplete={onComplete}
         />
@@ -522,7 +546,35 @@ export function RegisterWizard() {
           </div>
 
           <div className="flex items-center justify-between">
-            <Button onClick={reset}>Register Another Patient</Button>
+            <div className="flex gap-2">
+              <Button onClick={reset}>Register Another Patient</Button>
+              <Button
+                onClick={async () => {
+                  let gid = billGroupId;
+                  if (!gid) {
+                    // Create a new BillGroup
+                    try {
+                      const group = await api.post<{ id: string }>('/bill-groups', {});
+                      gid = group.id;
+                      setBillGroupId(gid);
+                    } catch {
+                      return;
+                    }
+                  }
+                  // Retroactively link the first order to the group
+                  if (result?.order?.id && gid) {
+                    try {
+                      await api.patch(`/bill-groups/${gid}/orders/${result.order.id}`, {});
+                    } catch {
+                      // best-effort — the order was already created
+                    }
+                  }
+                  resetForNewPatient();
+                }}
+              >
+                + Add Another Patient to This Bill
+              </Button>
+            </div>
             <Button variant="primary" onClick={() => window.print()}>
               🖨 Print Label / Receipt
             </Button>

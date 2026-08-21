@@ -3,6 +3,7 @@ import { ConfigModule } from '@nestjs/config';
 import { APP_GUARD } from '@nestjs/core';
 import { ApprovalModule } from './approval/approval.module';
 import { AuthModule } from './auth/auth.module';
+import { BillGroupsModule } from './bill-groups/bill-groups.module';
 import { JwtAuthGuard } from './auth/jwt-auth.guard';
 import { RolesGuard } from './auth/roles.guard';
 import { InvoicesModule } from './invoices/invoices.module';
@@ -34,6 +35,7 @@ import { VerifyModule } from './verify/verify.module';
     PartiesModule,
     OrdersModule,
     InvoicesModule,
+    BillGroupsModule,
     SamplesModule,
     VerifyModule,
     ApprovalModule,

@@ -175,6 +175,7 @@ export class OrdersService {
           bedNo: dto.orderDetails?.bedNo ?? null,
           ipOpNo: dto.orderDetails?.ipOpNo ?? null,
           source: dto.orderDetails?.source ?? null,
+          billGroupId: dto.orderDetails?.billGroupId ?? null,
         },
       });
 

@@ -66,6 +66,11 @@ export class OrderDetailsDto {
   @IsString()
   referrerPartyId?: string;
 
+  /** Consolidated billing: link this order into an existing BillGroup. */
+  @IsOptional()
+  @IsString()
+  billGroupId?: string;
+
   @IsOptional()
   @IsString()
   @MaxLength(1000)

@@ -57,6 +57,7 @@ export interface PatientInfoForOrder {
 
 export interface OrderResult {
   patient: { id: string; patientUid: string };
+  billGroupId?: string;
   order?: {
     id: string;
     subtotal: string;
@@ -168,6 +169,7 @@ export function Typeahead<T extends { id: string }>({
 export function OrderBillingStep({
   patientInfo,
   referrerId,
+  billGroupId,
   onBack,
   onComplete,
 }: {
@@ -176,6 +178,8 @@ export function OrderBillingStep({
   onComplete: (result: OrderResult) => void;
   /** Selected referrer party ID — passed from the Demographics step. */
   referrerId?: string;
+  /** BillGroup ID for consolidated billing — passed from the parent wizard. */
+  billGroupId?: string;
 }) {
   // --- search state ---
   const [testQuery, setTestQuery] = useState('');
@@ -536,9 +540,16 @@ export function OrderBillingStep({
         patient: { id: string; patientUid: string };
         orderTests: unknown[];
         invoice?: { id: string; status: string };
+        billGroupId?: string;
+        samples?: Array<{
+          id: string;
+          barcodeValue: string;
+          sampleType: { name: string; code: string };
+        }>;
       }>('/orders', payload);
       onComplete({
         patient: { id: res.patient.id, patientUid: res.patient.patientUid },
+        billGroupId: res.billGroupId,
         order: {
           id: res.id,
           subtotal: res.subtotal,
@@ -547,6 +558,7 @@ export function OrderBillingStep({
           status: res.status,
           orderTestsCount: res.orderTests?.length,
           invoice: res.invoice,
+          samples: res.samples,
         },
       });
     } catch (e) {

@@ -118,6 +118,7 @@ model Organization {
   payments          Payment[]
   samples           Sample[]
   testSpecifications TestSpecification[]
+  billGroups        BillGroup[]
 }
 
 model User {
@@ -341,6 +342,11 @@ model Order {
   // §4 Source — simple lead-tracking: "Walk-in", "Referral", etc.
   source String?
 
+  // Consolidated billing: links this order into a BillGroup for
+  // multi-patient billing. null = standalone (the common case).
+  billGroupId String?
+  billGroup   BillGroup? @relation(fields: [billGroupId], references: [id])
+
   // Stage 6: set once on the FIRST successful GET /orders/:id/report — the
   // report's issue date, distinct from approvedAt (approval can predate the
   // first print by hours/days). Displayed on the report as "Report issued"
@@ -472,6 +478,22 @@ model PaymentSplit {
   amount    Decimal     @db.Decimal(12, 2)
 
   @@index([paymentId])
+}
+
+// BillGroup: optional grouping for consolidated billing (multiple patients
+// billed together, e.g. a family visit). When billGroupId is null the order
+// is standalone — the common case. When set, the group's combined bill
+// displays all linked orders and allows cross-order payment distribution.
+model BillGroup {
+  id             String       @id @default(cuid())
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id])
+  createdBy      String
+  createdAt      DateTime     @default(now())
+
+  orders Order[]
+
+  @@index([organizationId])
 }
 
 // One Sample per distinct required sample type among an order's NON-dedicated
