@@ -324,17 +324,7 @@ export function RegisterWizard() {
 
           {/* §3 Field order: Name → Age → Referral Type → Referrer → remaining */}
           <div className="mt-5 grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5">
-            {/* §1 Single Patient Name field */}
-            <Field label="Patient Name" required>
-              <TextInput
-                autoFocus
-                value={demographics.name}
-                onChange={(e) => setDemographics((d) => ({ ...d, name: e.target.value }))}
-                placeholder="e.g. Ravi Kumar"
-              />
-            </Field>
-
-            {/* Title — adjacent to Patient Name */}
+            {/* Title — first field, before Patient Name */}
             <Field label="Title">
               <Select
                 value={demographics.title}
@@ -352,7 +342,6 @@ export function RegisterWizard() {
                     return {
                       ...d,
                       title: newTitle,
-                      /* Only auto-fill if a clear-gender title and gender not yet set or was auto-filled */
                       ...(autoGender ? { gender: autoGender } : {}),
                     };
                   });
@@ -367,7 +356,17 @@ export function RegisterWizard() {
               </Select>
             </Field>
 
-            {/* §2 Age — always enabled, plain number input, no checkbox gate */}
+            {/* Patient Name */}
+            <Field label="Patient Name" required>
+              <TextInput
+                autoFocus
+                value={demographics.name}
+                onChange={(e) => setDemographics((d) => ({ ...d, name: e.target.value }))}
+                placeholder="e.g. Ravi Kumar"
+              />
+            </Field>
+
+            {/* Age */}
             <Field label="Age" hint="Years">
               <TextInput
                 type="number"
@@ -379,7 +378,7 @@ export function RegisterWizard() {
               />
             </Field>
 
-            {/* §2 DOB — clearly optional */}
+            {/* DOB — optional, adjacent to Age */}
             <Field label="Date of Birth" hint="Optional">
               <TextInput
                 type="date"
@@ -388,6 +387,7 @@ export function RegisterWizard() {
               />
             </Field>
 
+            {/* Gender */}
             <Field label="Gender" required>
               <Select value={demographics.gender} onChange={(e) => setDemographics((d) => ({ ...d, gender: e.target.value as never }))}>
                 <option value="">—</option>
@@ -397,9 +397,56 @@ export function RegisterWizard() {
               </Select>
             </Field>
 
+            {/* Mobile */}
             <Field label="Mobile" required>
               <TextInput value={demographics.mobile} onChange={(e) => setDemographics((d) => ({ ...d, mobile: e.target.value }))} placeholder="10-digit number" maxLength={15} />
             </Field>
+
+            {/* Referral Type — moved up to sit right after Mobile */}
+            <Field label="Referral Type">
+              <select
+                value={referralType}
+                onChange={(e) => {
+                  const val = e.target.value;
+                  setReferralType(val);
+                  if (val === 'self' || val === '') {
+                    setReferrerId(undefined);
+                    setDoctorQuery('');
+                    setDoctorResults([]);
+                  }
+                }}
+                className="thulir-input"
+              >
+                  <option value="">— Select —</option>
+                  <option value="self">Self / Walk-in</option>
+                  <option value="doctor">Doctor</option>
+                  <option value="hospital">Hospital</option>
+                  <option value="reference_lab">Reference Lab</option>
+                  <option value="corporate">Corporate</option>
+                  <option value="insurance_tpa">Insurance / TPA</option>
+                  <option value="staff">Staff</option>
+                </select>
+            </Field>
+
+            {/* Specific Referrer — only when referral type is selected and not self */}
+            {referralType && referralType !== 'self' && (
+              <Field label={`Specific ${referralType.replace('_', ' ')} (optional)`}>
+                <ReferralTypeahead
+                  referralType={referralType}
+                  query={doctorQuery}
+                  onQueryChange={setDoctorQuery}
+                  results={doctorResults}
+                  onResultsChange={setDoctorResults}
+                  loading={doctorsLoading}
+                  onLoadingChange={setDoctorsLoading}
+                  onSelect={(d) => {
+                    setReferrerId(d.id);
+                    setDoctorQuery(d.name);
+                    setDoctorResults([]);
+                  }}
+                />
+              </Field>
+            )}
 
             <Field label="Email">
               <TextInput type="email" value={demographics.email} onChange={(e) => setDemographics((d) => ({ ...d, email: e.target.value }))} placeholder="optional" />
@@ -416,58 +463,6 @@ export function RegisterWizard() {
             <Field label="Address" className="sm:col-span-2 lg:col-span-3 xl:col-span-4 2xl:col-span-5">
               <TextInput value={demographics.address} onChange={(e) => setDemographics((d) => ({ ...d, address: e.target.value }))} placeholder="Street, city…" />
             </Field>
-          </div>
-
-          {/* §3 Referral Type + Specific Referrer */}
-          <div className="mt-4 border-t border-slate-100 pt-4">
-            <p className="mb-2 text-[12px] font-semibold text-slate-500 uppercase tracking-wide">Referral</p>
-            <div className="grid gap-4 sm:grid-cols-2">
-              <Field label="Referral Type">
-                <select
-                  value={referralType}
-                  onChange={(e) => {
-                    const val = e.target.value;
-                    setReferralType(val);
-                    if (val === 'self' || val === '') {
-                      setReferrerId(undefined);
-                      setDoctorQuery('');
-                      setDoctorResults([]);
-                    }
-                  }}
-                  className="thulir-input"
-                >
-                  <option value="">— Select —</option>
-                  <option value="self">Self / Walk-in</option>
-                  <option value="doctor">Doctor</option>
-                  <option value="hospital">Hospital</option>
-                  <option value="reference_lab">Reference Lab</option>
-                  <option value="corporate">Corporate</option>
-                  <option value="insurance_tpa">Insurance / TPA</option>
-                  <option value="staff">Staff</option>
-                </select>
-              </Field>
-              {referralType && referralType !== 'self' && (
-                <Field label={`Specific ${referralType.replace('_', ' ')} (optional)`}>
-                  <ReferralTypeahead
-                    referralType={referralType}
-                    query={doctorQuery}
-                    onQueryChange={setDoctorQuery}
-                    results={doctorResults}
-                    onResultsChange={setDoctorResults}
-                    loading={doctorsLoading}
-                    onLoadingChange={setDoctorsLoading}
-                    onSelect={(d) => {
-                      setReferrerId(d.id);
-                      setDoctorQuery(d.name);
-                      setDoctorResults([]);
-                    }}
-                  />
-                </Field>
-              )}
-            </div>
-            {referralType === 'self' && (
-              <p className="mt-1 text-[12px] text-slate-400">No referrer will be recorded (self / walk-in).</p>
-            )}
           </div>
 
           {/* §3 Inpatient Details — collapsed by default */}
