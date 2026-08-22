@@ -334,6 +334,39 @@ export function RegisterWizard() {
               />
             </Field>
 
+            {/* Title — adjacent to Patient Name */}
+            <Field label="Title">
+              <Select
+                value={demographics.title}
+                onChange={(e) => {
+                  const newTitle = e.target.value;
+                  setDemographics((d) => {
+                    /* Auto-map clear-gender titles; leave ambiguous ones alone */
+                    const genderMap: Record<string, 'male' | 'female'> = {
+                      Mr: 'male',
+                      Mrs: 'female',
+                      Ms: 'female',
+                      Miss: 'female',
+                    };
+                    const autoGender = genderMap[newTitle];
+                    return {
+                      ...d,
+                      title: newTitle,
+                      /* Only auto-fill if a clear-gender title and gender not yet set or was auto-filled */
+                      ...(autoGender ? { gender: autoGender } : {}),
+                    };
+                  });
+                }}
+              >
+                <option value="">—</option>
+                <option value="Mr">Mr</option>
+                <option value="Mrs">Mrs</option>
+                <option value="Ms">Ms</option>
+                <option value="Dr">Dr</option>
+                <option value="Miss">Miss</option>
+              </Select>
+            </Field>
+
             {/* §2 Age — always enabled, plain number input, no checkbox gate */}
             <Field label="Age" hint="Years">
               <TextInput
@@ -353,18 +386,6 @@ export function RegisterWizard() {
                 value={demographics.dob}
                 onChange={(e) => setDemographics((d) => ({ ...d, dob: e.target.value }))}
               />
-            </Field>
-
-            {/* Title */}
-            <Field label="Title">
-              <Select value={demographics.title} onChange={(e) => setDemographics((d) => ({ ...d, title: e.target.value }))}>
-                <option value="">—</option>
-                <option value="Mr">Mr</option>
-                <option value="Mrs">Mrs</option>
-                <option value="Ms">Ms</option>
-                <option value="Dr">Dr</option>
-                <option value="Miss">Miss</option>
-              </Select>
             </Field>
 
             <Field label="Gender" required>
