@@ -26,10 +26,11 @@ export class CreatePatientDto {
   @MaxLength(100)
   firstName!: string;
 
+  /** Optional — single-word names (e.g. "Ravi") produce an empty string via the frontend's splitPatientName(). */
+  @IsOptional()
   @IsString()
-  @IsNotEmpty()
   @MaxLength(100)
-  lastName!: string;
+  lastName?: string;
 
   /** Primary source of truth — when present, ageAtRegistration is derived. */
   @IsOptional()

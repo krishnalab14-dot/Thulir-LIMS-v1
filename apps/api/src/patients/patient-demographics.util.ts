@@ -51,9 +51,7 @@ export function assertNewPatientIdentity(dto: NewPatientIdentity): void {
   if (!dto.firstName || dto.firstName.trim().length === 0) {
     throw new BadRequestException('Patient first name is required');
   }
-  if (!dto.lastName || dto.lastName.trim().length === 0) {
-    throw new BadRequestException('Patient last name is required');
-  }
+  /* lastName is intentionally not required — single-word names (e.g. "Ravi") are valid; the frontend's splitPatientName() may produce an empty string. */
   if (!dto.gender) {
     throw new BadRequestException('Patient gender is required');
   }
