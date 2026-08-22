@@ -1,4 +1,4 @@
-import { Body, Controller, Get, HttpCode, Param, Post, Put, Query } from '@nestjs/common';
+import { Body, Controller, Get, HttpCode, Param, Patch, Post, Put, Query } from '@nestjs/common';
 import { PartyType, Role } from '@prisma/client';
 import { IsIn, IsOptional, IsString } from 'class-validator';
 import { Roles } from '../auth/roles.decorator';
@@ -25,9 +25,22 @@ export class PartiesController {
     return this.parties.search(query.q, query.type);
   }
 
+  /** GET /api/parties?all=true&type=doctor — list all (including inactive) for admin management. */
+  @Get()
+  listAll(@Query('type') type?: PartyType, @Query('all') all?: string) {
+    if (all === 'true') return this.parties.listAll(type);
+    return this.parties.search(undefined, type);
+  }
+
   @Post()
   create(@Body() dto: CreatePartyDto) {
     return this.parties.create(dto);
+  }
+
+  /** PATCH /api/parties/:id { name?, active? } — update name or toggle active. */
+  @Patch(':id')
+  update(@Param('id') id: string, @Body() body: { name?: string; active?: boolean }) {
+    return this.parties.update(id, body);
   }
 
   /**

@@ -159,6 +159,28 @@ async function main() {
   });
   console.log('Seeded admin user (username: admin / password: Thulir@123)');
 
+  // Seed configurable Title list
+  const defaultTitles = ['Mr', 'Mrs', 'Ms', 'Miss', 'Dr', 'Baby', 'Sister', 'Mx'];
+  for (let i = 0; i < defaultTitles.length; i++) {
+    await prisma.lookupItem.upsert({
+      where: {
+        organizationId_category_value: {
+          organizationId: ORG_ID,
+          category: 'title',
+          value: defaultTitles[i],
+        },
+      },
+      update: {},
+      create: {
+        organizationId: ORG_ID,
+        category: 'title',
+        value: defaultTitles[i],
+        sortOrder: i,
+      },
+    });
+  }
+  console.log(`Seeded ${defaultTitles.length} title options`);
+
   console.log(`Seed complete. Organization "${ORG_NAME}" (${ORG_ID}) is ready.`);
 }
 

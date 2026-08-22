@@ -35,11 +35,12 @@ const MENUS: MenuDef[] = [
     capability: 'masters',
     items: [
       { label: 'Tests', to: '/masters/tests' },
+      { label: 'Titles', to: '/masters/titles' },
       { label: 'Packages', disabled: true, hint: 'Later stage' },
       { label: 'Sample Types', disabled: true, hint: 'Later stage' },
     ],
   },
-  { label: 'Parties', items: [{ label: 'Doctors & Referrers', disabled: true, hint: 'Later stage' }] },
+  { label: 'Parties', items: [{ label: 'Doctors & Referrers', to: '/masters/doctors' }] },
   { label: 'Staff', items: [{ label: 'Users & Roles', disabled: true, hint: 'Later stage' }] },
   { label: 'Inventory', items: [{ label: 'Stock & Reagents', disabled: true, hint: 'Later stage' }] },
   { label: 'Analytics', items: [{ label: 'Reports & Dashboards', disabled: true, hint: 'Later stage' }] },

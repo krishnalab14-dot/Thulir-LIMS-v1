@@ -5,7 +5,9 @@ import { RequireAuth } from './components/RequireAuth';
 import { CollectionWorklist } from './pages/CollectionWorklist';
 import { ConsolidatedBill } from './pages/ConsolidatedBill';
 import { Login } from './pages/Login';
+import { MastersDoctors } from './pages/MastersDoctors';
 import { MastersTests } from './pages/MastersTests';
+import { MastersTitles } from './pages/MastersTitles';
 import { OrderDetail } from './pages/OrderDetail';
 import { Orders } from './pages/Orders';
 import { RegisterWizard } from './pages/RegisterWizard';
@@ -191,6 +193,22 @@ export function App() {
             element={
               <RequireAuth>
                 <MastersTests />
+              </RequireAuth>
+            }
+          />
+          <Route
+            path="/masters/titles"
+            element={
+              <RequireAuth>
+                <MastersTitles />
+              </RequireAuth>
+            }
+          />
+          <Route
+            path="/masters/doctors"
+            element={
+              <RequireAuth>
+                <MastersDoctors />
               </RequireAuth>
             }
           />

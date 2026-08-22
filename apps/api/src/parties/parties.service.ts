@@ -33,6 +33,29 @@ export class PartiesService {
     return this.prisma.prisma.party.create({ data: { organizationId: orgId, name: dto.name.trim(), type: dto.type } });
   }
 
+  /** List ALL parties of a type (including inactive) for admin management. */
+  async listAll(type?: PartyType) {
+    const orgId = this.tenant.requireOrganizationId();
+    return this.prisma.prisma.party.findMany({
+      where: { organizationId: orgId, ...(type ? { type } : {}) },
+      orderBy: { name: 'asc' },
+    });
+  }
+
+  /** Update name and/or active status. */
+  async update(id: string, data: { name?: string; active?: boolean }) {
+    const orgId = this.tenant.requireOrganizationId();
+    const party = await this.prisma.prisma.party.findFirst({ where: { id, organizationId: orgId } });
+    if (!party) throw new NotFoundException('Party not found');
+    return this.prisma.prisma.party.update({
+      where: { id },
+      data: {
+        ...(data.name !== undefined ? { name: data.name.trim() } : {}),
+        ...(data.active !== undefined ? { active: data.active } : {}),
+      },
+    });
+  }
+
   /**
    * POST /api/parties/:id/portal-access — admin/lab_manager generates or
    * resets a referrer's portal credentials. Returns the new username and

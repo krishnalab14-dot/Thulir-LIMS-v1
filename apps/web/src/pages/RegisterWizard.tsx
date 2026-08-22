@@ -84,6 +84,20 @@ export function RegisterWizard() {
   const [doctorsLoading, setDoctorsLoading] = useState(false);
   const [referrerId, setReferrerId] = useState<string | undefined>();
 
+  // Configurable title list from API
+  const [titleOptions, setTitleOptions] = useState<string[]>([]);
+  useEffect(() => {
+    api
+      .get<{ value: string }[]>('/lookup-items?category=title')
+      .then((items) => setTitleOptions(items.map((i) => i.value)))
+      .catch(() => {
+        /* fallback handled below */
+      });
+  }, []);
+  const effectiveTitleOptions = titleOptions.length > 0
+    ? titleOptions
+    : ['Mr', 'Mrs', 'Ms', 'Miss', 'Dr']; // hardcoded fallback if API fails
+
   // §4 Corner search — debounced typeahead
   const searchPatients = useCallback(async (t: string) => {
     if (!t.trim()) {
@@ -182,6 +196,12 @@ export function RegisterWizard() {
       const age = Number(demographics.age);
       if (age < 0 || age > 130) return 'Enter a valid age (0–130)';
     }
+
+    // §3 Specific referrer required for non-Self referral types
+    if (referralType && referralType !== 'self' && !referrerId) {
+      return `Please select a specific ${referralType.replace(/_/g, ' ')} before continuing`;
+    }
+
     return null;
   }
 
@@ -348,11 +368,9 @@ export function RegisterWizard() {
                 }}
               >
                 <option value="">—</option>
-                <option value="Mr">Mr</option>
-                <option value="Mrs">Mrs</option>
-                <option value="Ms">Ms</option>
-                <option value="Dr">Dr</option>
-                <option value="Miss">Miss</option>
+                {effectiveTitleOptions.map((t) => (
+                  <option key={t} value={t}>{t}</option>
+                ))}
               </Select>
             </Field>
 

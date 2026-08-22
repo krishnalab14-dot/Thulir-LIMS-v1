@@ -7,6 +7,7 @@ import { BillGroupsModule } from './bill-groups/bill-groups.module';
 import { JwtAuthGuard } from './auth/jwt-auth.guard';
 import { RolesGuard } from './auth/roles.guard';
 import { InvoicesModule } from './invoices/invoices.module';
+import { LookupItemsModule } from './lookup-items/lookup-items.module';
 import { MastersModule } from './masters/masters.module';
 import { OrdersModule } from './orders/orders.module';
 import { PartiesModule } from './parties/parties.module';
@@ -36,6 +37,7 @@ import { VerifyModule } from './verify/verify.module';
     OrdersModule,
     InvoicesModule,
     BillGroupsModule,
+    LookupItemsModule,
     SamplesModule,
     VerifyModule,
     ApprovalModule,
