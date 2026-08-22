@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { Badge, Button, EmptyState, Field, Select, Spinner, TextInput } from '../components/ui';
 import { api, ApiError } from '../lib/api';
-import { formatAge, formatDate, inr } from '../lib/format';
+import { formatAge, inr } from '../lib/format';
 import { OrderBillingStep, type OrderResult, type PatientInfoForOrder, type PartyOption, Typeahead } from './OrderBillingStep';
 
 interface PatientSummary {
@@ -18,22 +18,20 @@ interface PatientSummary {
   createdAt: string;
 }
 
-type Step = 1 | 2 | 3 | 4;
+type Step = 1 | 2 | 3;
 
+/** 3-step flow: Patient Entry → Order & Billing → Done */
 const STEPS = [
-  { n: 1, label: 'Identify' },
-  { n: 2, label: 'Demographics' },
-  { n: 3, label: 'Order & Billing' },
-  { n: 4, label: 'Done' },
+  { n: 1, label: 'Patient' },
+  { n: 2, label: 'Order & Billing' },
+  { n: 3, label: 'Done' },
 ];
 
 const emptyDemographics = {
   title: '',
-  firstName: '',
-  lastName: '',
-  dob: '',
-  useAge: false,
-  age: '',
+  name: '',          // §1 single "Patient Name" field — split at first space on submit
+  dob: '',           // §2 optional (age-primary)
+  age: '',           // §2 always enabled, plain number input
   gender: '' as '' | 'male' | 'female' | 'other',
   mobile: '',
   email: '',
@@ -47,6 +45,24 @@ const emptyDemographics = {
   ipOpNo: '',
 };
 
+/**
+ * §1 Splitting rule: single name → firstName / lastName.
+ * Split at the FIRST space: "Ravi Kumar" → firstName="Ravi", lastName="Kumar".
+ * A single word (e.g. "Ravi") → firstName="Ravi", lastName="".
+ * Extra spaces are trimmed; leading/trailing whitespace is stripped.
+ */
+function splitPatientName(fullName: string): { firstName: string; lastName: string } {
+  const trimmed = fullName.trim();
+  const spaceIdx = trimmed.indexOf(' ');
+  if (spaceIdx === -1) {
+    return { firstName: trimmed, lastName: '' };
+  }
+  return {
+    firstName: trimmed.slice(0, spaceIdx),
+    lastName: trimmed.slice(spaceIdx + 1).trim(),
+  };
+}
+
 export function RegisterWizard() {
   const [step, setStep] = useState<Step>(1);
   const [selectedPatient, setSelectedPatient] = useState<PatientSummary | null>(null);
@@ -55,32 +71,33 @@ export function RegisterWizard() {
   const [showInpatient, setShowInpatient] = useState(false);
   const [billGroupId, setBillGroupId] = useState<string | undefined>();
 
-  // Step 2 — referral
-  const [referralType, setReferralType] = useState(''); // '' = not selected, 'self' = walk-in
+  // §4 Corner search widget (replaces the old separate Identify step)
+  const [searchTerm, setSearchTerm] = useState('');
+  const [searchResults, setSearchResults] = useState<PatientSummary[]>([]);
+  const [searching, setSearching] = useState(false);
+  const [searchError, setSearchError] = useState('');
+
+  // Referral (inside Patient step)
+  const [referralType, setReferralType] = useState('');
   const [doctorQuery, setDoctorQuery] = useState('');
   const [doctorResults, setDoctorResults] = useState<PartyOption[]>([]);
   const [doctorsLoading, setDoctorsLoading] = useState(false);
   const [referrerId, setReferrerId] = useState<string | undefined>();
 
-  // Step 1 — identify
-  const [term, setTerm] = useState('');
-  const [results, setResults] = useState<PatientSummary[]>([]);
-  const [searching, setSearching] = useState(false);
-  const [searchError, setSearchError] = useState('');
-
-  const search = useCallback(async (t: string) => {
+  // §4 Corner search — debounced typeahead
+  const searchPatients = useCallback(async (t: string) => {
     if (!t.trim()) {
-      setResults([]);
+      setSearchResults([]);
       return;
     }
     setSearching(true);
     setSearchError('');
     try {
       const out = await api.get<{ results: PatientSummary[] }>(`/patients/check-duplicate?q=${encodeURIComponent(t.trim())}`);
-      setResults(out.results);
+      setSearchResults(out.results);
     } catch (e) {
       setSearchError(e instanceof ApiError ? e.message : 'Search failed');
-      setResults([]);
+      setSearchResults([]);
     } finally {
       setSearching(false);
     }
@@ -88,24 +105,25 @@ export function RegisterWizard() {
 
   useEffect(() => {
     const t = setTimeout(() => {
-      void search(term);
+      void searchPatients(searchTerm);
     }, 450);
     return () => clearTimeout(t);
-  }, [term, search]);
+  }, [searchTerm, searchPatients]);
 
   function reset() {
     setStep(1);
     setSelectedPatient(null);
     setDemographics(emptyDemographics);
     setResult(null);
-    setTerm('');
-    setResults([]);
+    setSearchTerm('');
+    setSearchResults([]);
     setSearchError('');
     setReferralType('');
     setDoctorQuery('');
     setDoctorResults([]);
     setReferrerId(undefined);
     setBillGroupId(undefined);
+    setShowInpatient(false);
   }
 
   /** Reset wizard to Step 1 for a new patient, preserving the bill group. */
@@ -114,37 +132,63 @@ export function RegisterWizard() {
     setSelectedPatient(null);
     setDemographics(emptyDemographics);
     setResult(null);
-    setTerm('');
-    setResults([]);
+    setSearchTerm('');
+    setSearchResults([]);
     setSearchError('');
     setReferralType('');
     setDoctorQuery('');
     setDoctorResults([]);
     setReferrerId(undefined);
+    setShowInpatient(false);
     // billGroupId intentionally NOT cleared — carry forward for consolidated billing
   }
 
-  function pickExisting(p: PatientSummary) {
+  /** §4 Select existing patient — pre-fill the form, keep editable. */
+  function selectExistingPatient(p: PatientSummary) {
     setSelectedPatient(p);
-    setStep(3); // skip demographics — link the existing patient
-    setReferrerId(undefined);
+    // Pre-fill demographics from the existing patient so staff can update if needed
+    setDemographics({
+      title: p.title ?? '',
+      name: `${p.firstName} ${p.lastName}`.trim(),
+      dob: p.dob ? p.dob.slice(0, 10) : '',
+      age: '', // not stored in PatientSummary; will derive from DOB on display
+      gender: p.gender,
+      mobile: p.mobile,
+      email: p.email ?? '',
+      address: '',
+      externalMrn: p.externalMrn ?? '',
+      abhaNumber: '',
+      patientType: '',
+      wardDesc: '',
+      bedNo: '',
+      ipOpNo: '',
+    });
+    setSearchTerm('');
+    setSearchResults([]);
   }
 
+  /** §2 Validation: age is always accepted; DOB is optional. */
   function demographicsValid(): string | null {
-    if (!demographics.firstName.trim() || !demographics.lastName.trim()) return 'First and last name are required';
-    if (!demographics.gender) return 'Gender is required';
-    if (!demographics.mobile.trim()) return 'Mobile number is required';
-    if (demographics.useAge) {
+    const { name, gender, mobile } = demographics;
+    if (!name.trim()) return 'Patient name is required';
+    if (!gender) return 'Gender is required';
+    if (!mobile.trim()) return 'Mobile number is required';
+
+    // §2 At least one of age or DOB must be provided
+    const hasAge = demographics.age !== '' && !Number.isNaN(Number(demographics.age));
+    const hasDob = !!demographics.dob;
+    if (!hasAge && !hasDob) return 'Age or date of birth is required';
+    if (hasAge) {
       const age = Number(demographics.age);
-      if (demographics.age === '' || Number.isNaN(age) || age < 0 || age > 130) return 'Enter a valid age (0–130)';
-    } else if (!demographics.dob) {
-      return 'Date of birth or age is required';
+      if (age < 0 || age > 130) return 'Enter a valid age (0–130)';
     }
     return null;
   }
 
-  const patientInfo: PatientInfoForOrder = selectedPatient
-    ? {
+  /** Build PatientInfoForOrder from the current demographics or selected patient. */
+  const patientInfo: PatientInfoForOrder = (() => {
+    if (selectedPatient) {
+      return {
         patientId: selectedPatient.id,
         patientUid: selectedPatient.patientUid,
         firstName: selectedPatient.firstName,
@@ -152,32 +196,37 @@ export function RegisterWizard() {
         gender: selectedPatient.gender,
         mobile: selectedPatient.mobile,
         dob: selectedPatient.dob ?? undefined,
-      }      : {
-        firstName: demographics.firstName,
-        lastName: demographics.lastName,
-        gender: demographics.gender || undefined,
-        mobile: demographics.mobile,
-        dob: demographics.useAge ? undefined : demographics.dob || undefined,
-        ageAtRegistration: demographics.useAge ? Number(demographics.age) : undefined,
-        patientType: demographics.patientType || undefined,
-        wardDesc: demographics.wardDesc || undefined,
-        bedNo: demographics.bedNo || undefined,
-        ipOpNo: demographics.ipOpNo || undefined,
       };
+    }
+    // §1 split single name at first space
+    const { firstName, lastName } = splitPatientName(demographics.name);
+    // §2 DOB takes precedence when present; otherwise use age
+    const hasDob = !!demographics.dob;
+    return {
+      firstName,
+      lastName,
+      gender: demographics.gender || undefined,
+      mobile: demographics.mobile,
+      dob: hasDob ? demographics.dob : undefined,
+      ageAtRegistration: !hasDob && demographics.age !== '' ? Number(demographics.age) : undefined,
+      patientType: demographics.patientType || undefined,
+      wardDesc: demographics.wardDesc || undefined,
+      bedNo: demographics.bedNo || undefined,
+      ipOpNo: demographics.ipOpNo || undefined,
+    };
+  })();
 
   function onComplete(completed: OrderResult) {
     setResult(completed);
-    // Store billGroupId if the order was linked to one, or if this is the
-    // first order and the user will choose to group it
     if (completed.billGroupId) {
       setBillGroupId(completed.billGroupId);
     }
-    setStep(4);
+    setStep(3);
   }
 
   return (
     <div className="w-full">
-      {/* Step indicator */}
+      {/* Step indicator — 3-step flow */}
       <div className="mb-5 flex items-center justify-between">
         {STEPS.map((s, i) => {
           const active = step === s.n;
@@ -204,62 +253,65 @@ export function RegisterWizard() {
         })}
       </div>
 
+      {/* §4 Step 1: Merged Patient Entry + Corner Search Widget */}
       {step === 1 && (
-        <div className="space-y-4">
-          <div className="thulir-card p-5">
-            <h1 className="text-lg font-bold text-slate-800">Patient Registration</h1>
-            <p className="mt-0.5 text-[13px] text-slate-500">Search by name, phone or MRN to link an existing patient, or register a new one.</p>
-            <div className="relative mt-4">
+        <div className="thulir-card p-5">
+          {/* Corner search widget — top-right */}
+          <div className="flex items-start justify-between gap-4">
+            <div>
+              <h1 className="text-lg font-bold text-slate-800">Patient Registration</h1>
+              <p className="mt-0.5 text-[13px] text-slate-500">
+                Fill in patient details below, or search for an existing patient.
+              </p>
+            </div>
+            <div className="relative w-64 shrink-0">
               <TextInput
-                autoFocus
-                placeholder="Search name / phone / MRN…"
-                value={term}
-                onChange={(e) => setTerm(e.target.value)}
-                className="py-2.5 pl-9"
+                placeholder="Search existing…"
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+                className="py-1.5 pl-8 text-[13px]"
               />
-              <svg width="15" height="15" viewBox="0 0 16 16" fill="none" className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400">
+              <svg width="14" height="14" viewBox="0 0 16 16" fill="none" className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400">
                 <circle cx="7" cy="7" r="4.5" stroke="currentColor" strokeWidth="1.5" />
                 <path d="M10.5 10.5L14 14" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
               </svg>
             </div>
-            {searchError && <p className="mt-2 text-[12px] text-rose-600">{searchError}</p>}
           </div>
 
+          {/* §4 Search results dropdown */}
           {searching && <Spinner label="Searching…" />}
-
-          {!searching && term.trim().length > 0 && results.length === 0 && !searchError && (
-            <EmptyState title="No matching patient" hint="You can register a new patient below." />
+          {searchError && <p className="mt-2 text-[12px] text-rose-600">{searchError}</p>}
+          {!searching && searchTerm.trim().length > 0 && searchResults.length === 0 && !searchError && (
+            <EmptyState title="No matching patient" hint="Continue filling the form below to register a new patient." />
           )}
-
-          {results.length > 0 && (
-            <div className="thulir-card overflow-hidden">
+          {searchResults.length > 0 && (
+            <div className="mt-3 thulir-card overflow-hidden">
               <table className="w-full">
                 <thead className="bg-slate-50">
                   <tr>
                     <th className="thulir-th">Patient</th>
                     <th className="thulir-th">UID</th>
-                    <th className="thulir-th">Age</th>
                     <th className="thulir-th">Mobile</th>
-                    <th className="thulir-th">Registered</th>
-                    <th className="thulir-th w-24"></th>
+                    <th className="thulir-th w-20"></th>
                   </tr>
                 </thead>
                 <tbody>
-                  {results.map((p) => (
+                  {searchResults.map((p) => (
                     <tr key={p.id} className="border-t border-slate-100 transition hover:bg-slate-50">
                       <td className="thulir-td">
                         <span className="font-medium text-slate-800">
-                          {p.title ? `${p.title} ` : ''}
-                          {p.firstName} {p.lastName}
+                          {p.title ? `${p.title} ` : ''}{p.firstName} {p.lastName}
                         </span>
                         <span className="ml-2 text-[11px] capitalize text-slate-400">{p.gender}</span>
                       </td>
                       <td className="thulir-td font-mono text-[12px] text-brand-700">{p.patientUid}</td>
-                      <td className="thulir-td">{formatAge(p.dob)}</td>
                       <td className="thulir-td font-mono text-[12px]">{p.mobile}</td>
-                      <td className="thulir-td text-[12px] text-slate-500">{formatDate(p.createdAt)}</td>
                       <td className="thulir-td text-right">
-                        <Button variant="secondary" className="h-7 px-2.5 text-[12px]" onClick={() => pickExisting(p)}>
+                        <Button
+                          variant="secondary"
+                          className="h-7 px-2.5 text-[12px]"
+                          onClick={() => selectExistingPatient(p)}
+                        >
                           Select
                         </Button>
                       </td>
@@ -270,19 +322,40 @@ export function RegisterWizard() {
             </div>
           )}
 
-          <div className="flex justify-between">
-            <span />
-            <Button variant="primary" className="px-5 py-2" onClick={() => setStep(2)}>
-              Register New Patient →
-            </Button>
-          </div>
-        </div>
-      )}
+          {/* §3 Field order: Name → Age → Referral Type → Referrer → remaining */}
+          <div className="mt-5 grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5">
+            {/* §1 Single Patient Name field */}
+            <Field label="Patient Name" required>
+              <TextInput
+                autoFocus
+                value={demographics.name}
+                onChange={(e) => setDemographics((d) => ({ ...d, name: e.target.value }))}
+                placeholder="e.g. Ravi Kumar"
+              />
+            </Field>
 
-      {step === 2 && (
-        <div className="thulir-card p-5">
-          <h2 className="mb-4 text-base font-bold text-slate-800">Demographics</h2>
-          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5">
+            {/* §2 Age — always enabled, plain number input, no checkbox gate */}
+            <Field label="Age" hint="Years">
+              <TextInput
+                type="number"
+                min={0}
+                max={130}
+                placeholder="e.g. 35"
+                value={demographics.age}
+                onChange={(e) => setDemographics((d) => ({ ...d, age: e.target.value }))}
+              />
+            </Field>
+
+            {/* §2 DOB — clearly optional */}
+            <Field label="Date of Birth" hint="Optional">
+              <TextInput
+                type="date"
+                value={demographics.dob}
+                onChange={(e) => setDemographics((d) => ({ ...d, dob: e.target.value }))}
+              />
+            </Field>
+
+            {/* Title */}
             <Field label="Title">
               <Select value={demographics.title} onChange={(e) => setDemographics((d) => ({ ...d, title: e.target.value }))}>
                 <option value="">—</option>
@@ -293,42 +366,7 @@ export function RegisterWizard() {
                 <option value="Miss">Miss</option>
               </Select>
             </Field>
-            <Field label="First Name" required>
-              <TextInput value={demographics.firstName} onChange={(e) => setDemographics((d) => ({ ...d, firstName: e.target.value }))} placeholder="e.g. Ravi" />
-            </Field>
-            <Field label="Last Name" required>
-              <TextInput value={demographics.lastName} onChange={(e) => setDemographics((d) => ({ ...d, lastName: e.target.value }))} placeholder="e.g. Kumar" />
-            </Field>
-            <Field label="Date of Birth" hint="Primary — age is derived automatically">
-              <TextInput
-                type="date"
-                value={demographics.dob}
-                disabled={demographics.useAge}
-                onChange={(e) => setDemographics((d) => ({ ...d, dob: e.target.value }))}
-              />
-            </Field>
-            <Field label="Age (if no DOB)">
-              <div className="flex gap-2">
-                <TextInput
-                  type="number"
-                  min={0}
-                  max={130}
-                  placeholder="Years"
-                  value={demographics.age}
-                  disabled={!demographics.useAge}
-                  onChange={(e) => setDemographics((d) => ({ ...d, age: e.target.value }))}
-                />
-                <label className="flex shrink-0 cursor-pointer items-center gap-1.5 text-[12px] text-slate-600">
-                  <input
-                    type="checkbox"
-                    checked={demographics.useAge}
-                    onChange={(e) => setDemographics((d) => ({ ...d, useAge: e.target.checked }))}
-                    className="h-3.5 w-3.5 rounded border-slate-300 text-brand-600 focus:ring-brand-600"
-                  />
-                  Use age
-                </label>
-              </div>
-            </Field>
+
             <Field label="Gender" required>
               <Select value={demographics.gender} onChange={(e) => setDemographics((d) => ({ ...d, gender: e.target.value as never }))}>
                 <option value="">—</option>
@@ -337,57 +375,29 @@ export function RegisterWizard() {
                 <option value="other">Other</option>
               </Select>
             </Field>
+
             <Field label="Mobile" required>
               <TextInput value={demographics.mobile} onChange={(e) => setDemographics((d) => ({ ...d, mobile: e.target.value }))} placeholder="10-digit number" maxLength={15} />
             </Field>
+
             <Field label="Email">
               <TextInput type="email" value={demographics.email} onChange={(e) => setDemographics((d) => ({ ...d, email: e.target.value }))} placeholder="optional" />
             </Field>
+
             <Field label="External MRN">
               <TextInput value={demographics.externalMrn} onChange={(e) => setDemographics((d) => ({ ...d, externalMrn: e.target.value }))} placeholder="optional" />
             </Field>
+
             <Field label="ABHA Number">
               <TextInput value={demographics.abhaNumber} onChange={(e) => setDemographics((d) => ({ ...d, abhaNumber: e.target.value }))} placeholder="optional" />
             </Field>
+
             <Field label="Address" className="sm:col-span-2 lg:col-span-3 xl:col-span-4 2xl:col-span-5">
               <TextInput value={demographics.address} onChange={(e) => setDemographics((d) => ({ ...d, address: e.target.value }))} placeholder="Street, city…" />
             </Field>
           </div>
 
-          {/* §3 Inpatient Details — collapsed by default */}
-          <div className="mt-4 border-t border-slate-100 pt-4">
-            <button
-              type="button"
-              onClick={() => setShowInpatient(!showInpatient)}
-              className="flex items-center gap-2 text-[13px] font-semibold text-slate-600 hover:text-slate-800"
-            >
-              <svg width="12" height="12" viewBox="0 0 12 12" fill="currentColor" className={`transition-transform ${showInpatient ? 'rotate-90' : ''}`}>
-                <path d="M4.5 2L9 6L4.5 10" stroke="currentColor" strokeWidth="1.5" fill="none" strokeLinecap="round" strokeLinejoin="round" />
-              </svg>
-              + Inpatient Details
-            </button>
-            {showInpatient && (
-              <div className="mt-3 grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
-                <Field label="Patient Type">
-                  <Select value={demographics.patientType} onChange={(e) => setDemographics((d) => ({ ...d, patientType: e.target.value }))}>
-                    <option value="">—</option>
-                    <option value="IP">IP (In-patient)</option>
-                    <option value="OP">OP (Out-patient)</option>
-                  </Select>
-                </Field>
-                <Field label="Ward">
-                  <TextInput value={demographics.wardDesc} onChange={(e) => setDemographics((d) => ({ ...d, wardDesc: e.target.value }))} placeholder="e.g. Ward A" />
-                </Field>
-                <Field label="Bed No.">
-                  <TextInput value={demographics.bedNo} onChange={(e) => setDemographics((d) => ({ ...d, bedNo: e.target.value }))} placeholder="e.g. 12B" />
-                </Field>
-                <Field label="IP/OP No.">
-                  <TextInput value={demographics.ipOpNo} onChange={(e) => setDemographics((d) => ({ ...d, ipOpNo: e.target.value }))} placeholder="e.g. IP-2026-045" />
-                </Field>
-              </div>
-            )}
-          </div>
-          {/* Referral Type + Specific Referrer — moved from Step 3 */}
+          {/* §3 Referral Type + Specific Referrer */}
           <div className="mt-4 border-t border-slate-100 pt-4">
             <p className="mb-2 text-[12px] font-semibold text-slate-500 uppercase tracking-wide">Referral</p>
             <div className="grid gap-4 sm:grid-cols-2">
@@ -439,8 +449,41 @@ export function RegisterWizard() {
             )}
           </div>
 
-          <div className="mt-5 flex justify-between">
-            <Button onClick={() => setStep(1)}>← Back</Button>
+          {/* §3 Inpatient Details — collapsed by default */}
+          <div className="mt-4 border-t border-slate-100 pt-4">
+            <button
+              type="button"
+              onClick={() => setShowInpatient(!showInpatient)}
+              className="flex items-center gap-2 text-[13px] font-semibold text-slate-600 hover:text-slate-800"
+            >
+              <svg width="12" height="12" viewBox="0 0 12 12" fill="currentColor" className={`transition-transform ${showInpatient ? 'rotate-90' : ''}`}>
+                <path d="M4.5 2L9 6L4.5 10" stroke="currentColor" strokeWidth="1.5" fill="none" strokeLinecap="round" strokeLinejoin="round" />
+              </svg>
+              + Inpatient Details
+            </button>
+            {showInpatient && (
+              <div className="mt-3 grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+                <Field label="Patient Type">
+                  <Select value={demographics.patientType} onChange={(e) => setDemographics((d) => ({ ...d, patientType: e.target.value }))}>
+                    <option value="">—</option>
+                    <option value="IP">IP (In-patient)</option>
+                    <option value="OP">OP (Out-patient)</option>
+                  </Select>
+                </Field>
+                <Field label="Ward">
+                  <TextInput value={demographics.wardDesc} onChange={(e) => setDemographics((d) => ({ ...d, wardDesc: e.target.value }))} placeholder="e.g. Ward A" />
+                </Field>
+                <Field label="Bed No.">
+                  <TextInput value={demographics.bedNo} onChange={(e) => setDemographics((d) => ({ ...d, bedNo: e.target.value }))} placeholder="e.g. 12B" />
+                </Field>
+                <Field label="IP/OP No.">
+                  <TextInput value={demographics.ipOpNo} onChange={(e) => setDemographics((d) => ({ ...d, ipOpNo: e.target.value }))} placeholder="e.g. IP-2026-045" />
+                </Field>
+              </div>
+            )}
+          </div>
+
+          <div className="mt-5 flex justify-end">
             <Button
               variant="primary"
               className="px-5"
@@ -451,7 +494,7 @@ export function RegisterWizard() {
                   return;
                 }
                 setSearchError('');
-                setStep(3);
+                setStep(2);
               }}
             >
               Continue to Order & Billing →
@@ -461,17 +504,19 @@ export function RegisterWizard() {
         </div>
       )}
 
-      {step === 3 && (
+      {/* Step 2: Order & Billing */}
+      {step === 2 && (
         <OrderBillingStep
           patientInfo={patientInfo}
           referrerId={referrerId}
           billGroupId={billGroupId}
-          onBack={() => (selectedPatient ? setStep(1) : setStep(2))}
+          onBack={() => setStep(1)}
           onComplete={onComplete}
         />
       )}
 
-      {step === 4 && result && (
+      {/* Step 3: Done (was Step 4) */}
+      {step === 3 && result && (
         <div className="space-y-4">
           <div className="thulir-card overflow-hidden">
             <div className="border-b border-slate-100 bg-brand-700 px-5 py-4 text-white">
@@ -482,10 +527,13 @@ export function RegisterWizard() {
               <div>
                 <p className="thulir-label">Patient</p>
                 <p className="text-sm font-medium text-slate-800">
-                  {selectedPatient ? `${selectedPatient.firstName} ${selectedPatient.lastName}` : `${demographics.firstName} ${demographics.lastName}`}
+                  {selectedPatient
+                    ? `${selectedPatient.firstName} ${selectedPatient.lastName}`
+                    : splitPatientName(demographics.name).firstName + ' ' + splitPatientName(demographics.name).lastName
+                  }
                 </p>
                 <p className="text-[12px] text-slate-400">
-                  {selectedPatient ? formatAge(selectedPatient.dob) : demographics.useAge ? `${demographics.age} y` : formatAge(demographics.dob)}
+                  {selectedPatient ? formatAge(selectedPatient.dob) : demographics.dob ? formatAge(demographics.dob) : `${demographics.age} y`}
                   {' · '}
                   {selectedPatient ? selectedPatient.mobile : demographics.mobile}
                 </p>
@@ -537,8 +585,11 @@ export function RegisterWizard() {
             <p className="text-[11px] font-bold uppercase tracking-widest text-brand-700">Thulir Demo Lab</p>
             <p className="mt-3 font-mono text-2xl font-bold tracking-widest text-slate-900">{result.patient.patientUid}</p>
             <p className="mt-2 text-sm text-slate-800">
-              {selectedPatient ? `${selectedPatient.firstName} ${selectedPatient.lastName}` : `${demographics.firstName} ${demographics.lastName}`}
-              {selectedPatient ? ` · ${formatAge(selectedPatient.dob)}` : demographics.useAge ? ` · ${demographics.age} y` : ` · ${formatAge(demographics.dob)}`}
+              {selectedPatient
+                ? `${selectedPatient.firstName} ${selectedPatient.lastName}`
+                : splitPatientName(demographics.name).firstName + ' ' + splitPatientName(demographics.name).lastName
+              }
+              {selectedPatient ? ` · ${formatAge(selectedPatient.dob)}` : demographics.dob ? ` · ${formatAge(demographics.dob)}` : ` · ${demographics.age} y`}
             </p>
             <p className="text-sm text-slate-700">{selectedPatient ? selectedPatient.mobile : demographics.mobile}</p>
             {result.order && <p className="mt-2 text-sm text-slate-700">Order: {result.order.id.slice(0, 8).toUpperCase()} · {inr(result.order.totalAmount)}</p>}
@@ -552,7 +603,6 @@ export function RegisterWizard() {
                 onClick={async () => {
                   let gid = billGroupId;
                   if (!gid) {
-                    // Create a new BillGroup
                     try {
                       const group = await api.post<{ id: string }>('/bill-groups', {});
                       gid = group.id;
@@ -561,7 +611,6 @@ export function RegisterWizard() {
                       return;
                     }
                   }
-                  // Retroactively link the first order to the group
                   if (result?.order?.id && gid) {
                     try {
                       await api.patch(`/bill-groups/${gid}/orders/${result.order.id}`, {});
