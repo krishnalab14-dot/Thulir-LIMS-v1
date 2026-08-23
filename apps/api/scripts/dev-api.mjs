@@ -12,6 +12,15 @@
  *      (`prisma migrate deploy`) and seeds the demo org, then points the API
  *      at it.
  *
+ * Migrations run on EVERY start — not just on a fresh database. This is the
+ * root-cause fix for two incidents where the running preview served 500s
+ * because migrations committed to the repo had never been applied to the
+ * long-lived preview database (the old code only migrated when the `Organization`
+ * table was absent, so a DB with a stale schema never caught up).
+ * `prisma migrate deploy` is idempotent: it applies only migrations not yet
+ * recorded in `_prisma_migrations` and touches nothing else, so it is safe to
+ * run unconditionally at boot.
+ *
  * A candidate URL is only used if it is BOTH reachable AND already migrated
  * (has the `Organization` table) — otherwise we fall through to the next
  * option. This way a stale or schema-less URL (e.g. a freshly created Supabase
@@ -258,10 +267,11 @@ async function main() {
       env: { ...process.env, DATABASE_URL: url },
     });
 
-  if (!(await hasSchema(url))) {
-    log('Applying migrations (prisma migrate deploy)…');
-    run('npx --no-install prisma migrate deploy');
-  }
+  // ALWAYS apply pending migrations on every start (idempotent — only runs
+  // migrations missing from _prisma_migrations). Never gate this on hasSchema():
+  // an existing DB with a stale schema must still catch up to newer migrations.
+  log('Applying pending migrations (prisma migrate deploy)…');
+  run('npx --no-install prisma migrate deploy');
   if (!(await hasSchema(url))) {
     throw new Error('Migrations did not create the schema — the database is unusable.');
   }
