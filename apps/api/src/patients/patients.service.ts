@@ -45,11 +45,15 @@ export class PatientsService {
       or.push({ mobile: { contains: mobile } });
     }
     if (term) {
+      // The registration corner-search sends only ?q= — staff type whatever
+      // they have (name, PID, MRN, or a phone number), so the free-text term
+      // must also match mobile for returning-patient lookup by phone.
       or.push(
         { firstName: { contains: term, mode: 'insensitive' } },
         { lastName: { contains: term, mode: 'insensitive' } },
         { externalMrn: { contains: term, mode: 'insensitive' } },
         { patientUid: { contains: term, mode: 'insensitive' } },
+        { mobile: { contains: term } },
       );
     }
     if (query.firstName?.trim()) {

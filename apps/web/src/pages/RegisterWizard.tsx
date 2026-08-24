@@ -63,6 +63,72 @@ function splitPatientName(fullName: string): { firstName: string; lastName: stri
   };
 }
 
+/** Escapes text for safe interpolation into the downloaded invoice HTML. */
+function esc(s: string): string {
+  return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+}
+
+/**
+ * §1 Download Invoice — builds a self-contained HTML document from the SAME
+ * content rendered in the printable .print-area receipt card (single source
+ * of truth — no second layout) and triggers a browser download. No PDF
+ * library exists in this project, so (per the accepted pattern) the file is
+ * a print-ready document whose content matches the Print action exactly;
+ * opening it and printing to PDF yields the identical invoice.
+ */
+function downloadInvoice(
+  result: OrderResult,
+  patientLine: string,
+  patientSub: string,
+  mobile: string,
+  samples: Array<{ barcodeValue: string; sampleType: { name: string; code: string } }>,
+) {
+  const uid = result.patient.patientUid;
+  const order = result.order;
+  const filename = `invoice-${uid}${order ? '-' + order.id.slice(0, 8).toUpperCase() : ''}.html`;
+  const sampleRows = samples
+    .map(
+      (s) =>
+        `<tr><td>${esc(s.sampleType.name)} (${esc(s.sampleType.code)})</td><td style="text-align:right;font-family:ui-monospace,monospace;font-weight:bold">${esc(s.barcodeValue)}</td></tr>`,
+    )
+    .join('');
+  const html = `<!doctype html>
+<html><head><meta charset="utf-8"><title>Invoice ${esc(uid)}</title>
+<style>
+  body{font-family:ui-sans-serif,system-ui,'Segoe UI',Arial,sans-serif;margin:48px;color:#0f172a}
+  .brand{font-size:11px;font-weight:bold;letter-spacing:.15em;text-transform:uppercase;color:#0f766e}
+  .uid{font-family:ui-monospace,monospace;font-size:28px;font-weight:bold;letter-spacing:.1em;margin-top:16px}
+  .muted{color:#64748b}
+  table{border-collapse:collapse;width:100%;margin-top:20px}
+  td{border-bottom:1px solid #e2e8f0;padding:8px 4px;font-size:14px}
+  .total-row td{border-top:2px solid #0f172a;border-bottom:none;font-weight:bold;padding-top:12px}
+  footer{margin-top:32px;border-top:1px dashed #cbd5e1;padding-top:8px;font-size:10px;letter-spacing:.08em;text-transform:uppercase;color:#94a3b8}
+  @media print{body{margin:24mm}}
+</style></head><body>
+  <p class="brand">Thulir Demo Lab</p>
+  <p class="uid">${esc(uid)}</p>
+  <p>${esc(patientLine)}<br><span class="muted">${esc(patientSub)} · ${esc(mobile)}</span></p>
+  ${order ? `<table>
+    <tr><td>Order</td><td style="text-align:right;font-family:ui-monospace,monospace">${esc(order.id.slice(0, 8).toUpperCase())} · ${esc(order.status)}</td></tr>
+    <tr><td>Items</td><td style="text-align:right">${order.orderTestsCount ?? '—'}</td></tr>
+    ${sampleRows}
+    <tr><td>Subtotal${Number(order.discountPercent) > 0 ? ` (discount ${esc(order.discountPercent)}%)` : ''}</td><td style="text-align:right;font-family:ui-monospace,monospace">₹${inr(order.subtotal)}</td></tr>
+    <tr class="total-row"><td>Total Due</td><td style="text-align:right">₹${inr(order.totalAmount)}</td></tr>
+    <tr><td>Payment status</td><td style="text-align:right;text-transform:capitalize">${esc(order.invoice?.status ?? 'due')}</td></tr>
+  </table>` : ''}
+  <footer>${new Date().toLocaleString('en-IN')}</footer>
+</body></html>`;
+  const blob = new Blob([html], { type: 'text/html;charset=utf-8' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(url);
+}
+
 export function RegisterWizard() {
   const [step, setStep] = useState<Step>(1);
   const [selectedPatient, setSelectedPatient] = useState<PatientSummary | null>(null);
@@ -658,9 +724,27 @@ export function RegisterWizard() {
                 + Add Another Patient to This Bill
               </Button>
             </div>
-            <Button variant="primary" onClick={() => window.print()}>
-              🖨 Print Label / Receipt
-            </Button>
+            <div className="flex gap-2">
+              <Button
+                onClick={() => {
+                  if (!result) return;
+                  downloadInvoice(
+                    result,
+                    selectedPatient
+                      ? `${selectedPatient.firstName} ${selectedPatient.lastName}`.trim()
+                      : demographics.name.trim(),
+                    selectedPatient ? formatAge(selectedPatient.dob) : demographics.dob ? formatAge(demographics.dob) : `${demographics.age} y`,
+                    selectedPatient ? selectedPatient.mobile : demographics.mobile,
+                    result.order?.samples ?? [],
+                  );
+                }}
+              >
+                ⬇ Download Invoice
+              </Button>
+              <Button variant="primary" onClick={() => window.print()}>
+                🖨 Print Label / Receipt
+              </Button>
+            </div>
           </div>
         </div>
       )}
