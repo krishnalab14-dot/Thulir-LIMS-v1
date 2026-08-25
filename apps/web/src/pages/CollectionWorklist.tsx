@@ -18,6 +18,16 @@ interface PendingSample {
   };
 }
 
+/** Same payload as SampleDetail's label — one shared endpoint, one label layout. */
+interface LabelData {
+  barcodeValue: string;
+  patientName: string;
+  patientUid: string;
+  sampleTypeName: string;
+  orderId: string;
+  labName: string;
+}
+
 const REJECTION_REASONS = [
   { value: 'hemolyzed', label: 'Hemolyzed' },
   { value: 'clotted', label: 'Clotted' },
@@ -47,6 +57,21 @@ export function CollectionWorklist() {
 
   // Banner after a rejection, so the new recollection label is never silently hidden.
   const [recollection, setRecollection] = useState<{ id: string; barcodeValue: string; orderId: string } | null>(null);
+
+  // Print Label lives HERE (at the tube-handling point), not on billing's Done
+  // screen. Reuses the same /samples/:id/label endpoint + .print-area pattern
+  // as SampleDetail — no second label layout.
+  const [label, setLabel] = useState<LabelData | null>(null);
+  const printLabel = useCallback(async (sampleId: string) => {
+    setError('');
+    try {
+      setLabel(await api.get<LabelData>(`/samples/${sampleId}/label`));
+      // Render the label into the print area, then print after a tick so the DOM is in place.
+      setTimeout(() => window.print(), 50);
+    } catch (e) {
+      setError(e instanceof ApiError ? e.message : 'Could not load the label');
+    }
+  }, []);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -141,9 +166,7 @@ export function CollectionWorklist() {
               {recollection.barcodeValue} <span className="text-emerald-600">· awaiting collection</span>
             </p>
           </div>
-          <Link to={`/samples/${recollection.id}`} className="rounded-md border border-emerald-300 bg-white px-3 py-1.5 text-[13px] font-medium text-emerald-800 hover:bg-emerald-100">
-            Print / view label
-          </Link>
+          <Button onClick={() => void printLabel(recollection.id)}>🖨 Print recollection label</Button>
         </div>
       )}
 
@@ -237,6 +260,9 @@ export function CollectionWorklist() {
                   <td className="thulir-td text-[12px] text-slate-500">{waitLabel(Date.now() - new Date(s.createdAt).getTime())}</td>
                   <td className="thulir-td">
                     <div className="flex justify-end gap-1.5">
+                      <Button onClick={() => void printLabel(s.id)} disabled={busyId === s.id}>
+                        🖨 Label
+                      </Button>
                       <Button variant="primary" onClick={() => void collect(s.id)} disabled={busyId === s.id}>
                         Collect
                       </Button>
@@ -250,6 +276,18 @@ export function CollectionWorklist() {
             </tbody>
           </table>
         </Card>
+      )}
+
+      {/* Printable label — rendered only during window.print() (see .print-area in index.css). */}
+      {label && (
+        <div className="print-area thulir-card p-5">
+          <p className="text-[11px] font-bold uppercase tracking-widest text-brand-700">{label.labName}</p>
+          <p className="mt-3 font-mono text-2xl font-bold tracking-widest text-slate-900">{label.barcodeValue}</p>
+          <p className="mt-2 text-sm text-slate-800">{label.patientName}</p>
+          <p className="font-mono text-[12px] text-slate-500">{label.patientUid}</p>
+          <p className="mt-2 text-sm text-slate-700">{label.sampleTypeName}</p>
+          <p className="text-[12px] text-slate-500">Order {label.orderId.slice(0, 8).toUpperCase()}</p>
+        </div>
       )}
 
       {rejectTarget && (

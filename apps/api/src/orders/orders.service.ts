@@ -10,6 +10,7 @@ import { computeOrderStatus } from './order-status.util';
 import { computeOrderTotal } from './order-totals.util';
 import { distributePackagePrice } from './package-pricing.util';
 import { buildDedicatedSampleBarcode, buildSampleBarcode } from '../samples/sample-barcode.util';
+import { nextBillNo } from './bill-no.util';
 
 /** One OrderTest row to snapshot: a standalone test at its current price, or a
  *  package constituent at its share of the package's own price. Sample-type
@@ -154,9 +155,18 @@ export class OrdersService {
       //    Snapshots are captured NOW; barcodes are deterministic (full order
       //    id + tube code, + full test id for dedicated samples), so there is
       //    no counter/race risk under parallel order creation.
+      // Sequential human-friendly bill number (THU-BILL-2026-0001) — same
+      // atomic-counter pattern as patientUid, separate counter namespace.
+      const org = await tx.organization.findUnique({ where: { id: orgId } });
+      if (!org) {
+        throw new BadRequestException('Organization not found');
+      }
+      const billNo = await nextBillNo(tx, org, new Date().getFullYear());
+
       const order = await tx.order.create({
         data: {
           organizationId: orgId,
+          billNo,
           patientId,
           referrerPartyId: dto.orderDetails?.referrerPartyId ?? null,
           clinicalNotes: dto.orderDetails?.clinicalNotes ?? null,

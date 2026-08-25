@@ -6,6 +6,8 @@ import { formatDateTime, inr } from '../lib/format';
 
 interface OrderRow {
   id: string;
+  /** Sequential human-friendly bill reference (THU-BILL-2026-0001). */
+  billNo?: string | null;
   status: string;
   isUrgent: boolean;
   subtotal: string;
@@ -90,7 +92,7 @@ export function Orders() {
                 >
                   <td className="thulir-td">
                     <span className="flex items-center gap-1.5 font-mono text-[12px] font-semibold text-brand-700">
-                      {o.id.slice(0, 8).toUpperCase()}
+                      {o.billNo ?? o.id.slice(0, 8).toUpperCase()}
                       {o.isUrgent && <Badge tone="rose">URGENT</Badge>}
                     </span>
                   </td>

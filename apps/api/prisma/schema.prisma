@@ -302,6 +302,12 @@ model Party {
 // by callers; it is recomputed whenever an OrderTest changes.
 model Order {
   id               String       @id @default(cuid())
+
+  // Human-friendly sequential bill/invoice reference (e.g. THU-BILL-2026-0001),
+  // generated with the same atomic UidCounter pattern as patientUid. Nullable:
+  // orders created before this field existed keep null; every new order gets one.
+  billNo           String?      @unique
+
   organizationId   String
   organization     Organization @relation(fields: [organizationId], references: [id])
   patientId        String
@@ -530,9 +536,11 @@ model Sample {
   @@index([recollectionOfSampleId])
 }
 
-// Internal counter table backing org-scoped, year-scoped sequential patientUid
-// generation. Incremented with a single atomic INSERT ... ON CONFLICT ... RETURNING
-// so concurrent registrations can never produce a duplicate patientUid.
+// Internal counter table backing org-scoped, year-scoped sequential human IDs
+// (patientUid uses key `${orgId}:${year}`; the order billNo reuses the same
+// table under a separate `${orgId}:bill:${year}` namespace). Incremented with a
+// single atomic INSERT ... ON CONFLICT ... RETURNING so concurrent writes can
+// never produce a duplicate identifier.
 model UidCounter {
   id      String @id // `${organizationId}:${year}`
   orgId   String

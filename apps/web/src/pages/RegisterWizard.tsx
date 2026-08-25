@@ -85,7 +85,8 @@ function downloadInvoice(
 ) {
   const uid = result.patient.patientUid;
   const order = result.order;
-  const filename = `invoice-${uid}${order ? '-' + order.id.slice(0, 8).toUpperCase() : ''}.html`;
+  const billRef = order?.billNo ?? (order ? order.id.slice(0, 8).toUpperCase() : '');
+  const filename = `invoice-${uid}${billRef ? '-' + billRef : ''}.html`;
   const sampleRows = samples
     .map(
       (s) =>
@@ -109,7 +110,7 @@ function downloadInvoice(
   <p class="uid">${esc(uid)}</p>
   <p>${esc(patientLine)}<br><span class="muted">${esc(patientSub)} · ${esc(mobile)}</span></p>
   ${order ? `<table>
-    <tr><td>Order</td><td style="text-align:right;font-family:ui-monospace,monospace">${esc(order.id.slice(0, 8).toUpperCase())} · ${esc(order.status)}</td></tr>
+    <tr><td>Bill No.</td><td style="text-align:right;font-family:ui-monospace,monospace">${esc(billRef)} · ${esc(order.status)}</td></tr>
     <tr><td>Items</td><td style="text-align:right">${order.orderTestsCount ?? '—'}</td></tr>
     ${sampleRows}
     <tr><td>Subtotal${Number(order.discountPercent) > 0 ? ` (discount ${esc(order.discountPercent)}%)` : ''}</td><td style="text-align:right;font-family:ui-monospace,monospace">₹${inr(order.subtotal)}</td></tr>
@@ -641,8 +642,8 @@ export function RegisterWizard() {
               {result.order && (
                 <>
                   <div>
-                    <p className="thulir-label">Order</p>
-                    <p className="font-mono text-sm font-medium text-slate-800">{result.order.id.slice(0, 8).toUpperCase()}</p>
+                    <p className="thulir-label">Bill No.</p>
+                    <p className="font-mono text-sm font-medium text-slate-800">{result.order.billNo ?? result.order.id.slice(0, 8).toUpperCase()}</p>
                     <p className="text-[12px] text-slate-400">
                       {result.order.orderTestsCount ?? ''} item{result.order.orderTestsCount === 1 ? '' : 's'} ·{' '}
                       <Badge tone="slate">{result.order.status}</Badge>
@@ -680,19 +681,27 @@ export function RegisterWizard() {
             </div>
           )}
 
-          {/* Printable label */}
+          {/* Printable RECEIPT — the tube LABEL moved to Sample Collection,
+              where the technician actually handles the physical tube. */}
           <div className="print-area thulir-card p-5">
-            <p className="text-[11px] font-bold uppercase tracking-widest text-brand-700">Thulir Demo Lab</p>
-            <p className="mt-3 font-mono text-2xl font-bold tracking-widest text-slate-900">{result.patient.patientUid}</p>
+            <p className="text-[11px] font-bold uppercase tracking-widest text-brand-700">Thulir Demo Lab — Receipt</p>
+            {result.order && (
+              <p className="mt-3 font-mono text-xl font-bold tracking-wide text-slate-900">{result.order.billNo ?? result.order.id.slice(0, 8).toUpperCase()}</p>
+            )}
             <p className="mt-2 text-sm text-slate-800">
               {selectedPatient
                 ? `${selectedPatient.firstName} ${selectedPatient.lastName}`
                 : splitPatientName(demographics.name).firstName + ' ' + splitPatientName(demographics.name).lastName
               }
+              <span className="ml-2 font-mono text-[12px] text-slate-500">PID {result.patient.patientUid}</span>
               {selectedPatient ? ` · ${formatAge(selectedPatient.dob)}` : demographics.dob ? ` · ${formatAge(demographics.dob)}` : ` · ${demographics.age} y`}
             </p>
             <p className="text-sm text-slate-700">{selectedPatient ? selectedPatient.mobile : demographics.mobile}</p>
-            {result.order && <p className="mt-2 text-sm text-slate-700">Order: {result.order.id.slice(0, 8).toUpperCase()} · {inr(result.order.totalAmount)}</p>}
+            {result.order && (
+              <p className="mt-2 text-sm text-slate-700">
+                Amount: {inr(result.order.totalAmount)} · Payment: {result.order.invoice?.status ?? 'due'}
+              </p>
+            )}
             <p className="mt-4 border-t border-dashed border-slate-300 pt-2 text-[10px] uppercase tracking-wide text-slate-400">{new Date().toLocaleString('en-IN')}</p>
           </div>
 
@@ -742,7 +751,7 @@ export function RegisterWizard() {
                 ⬇ Download Invoice
               </Button>
               <Button variant="primary" onClick={() => window.print()}>
-                🖨 Print Label / Receipt
+                🖨 Print Receipt
               </Button>
             </div>
           </div>

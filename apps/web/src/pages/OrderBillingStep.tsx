@@ -60,6 +60,8 @@ export interface OrderResult {
   billGroupId?: string;
   order?: {
     id: string;
+    /** Sequential human-friendly bill reference (THU-BILL-2026-0001). */
+    billNo?: string | null;
     subtotal: string;
     discountPercent: string;
     totalAmount: string;

@@ -6,6 +6,8 @@ import { formatDateTime, inr } from '../lib/format';
 
 interface OrderDetailData {
   id: string;
+  /** Sequential human-friendly bill reference (THU-BILL-2026-0001). */
+  billNo?: string | null;
   status: string;
   isUrgent: boolean;
   subtotal: string;
@@ -78,7 +80,7 @@ export function OrderDetail() {
         <div>
           <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">Order detail</p>
           <h1 className="flex items-center gap-2 text-lg font-bold text-slate-800">
-            <span className="font-mono">{order.id.slice(0, 8).toUpperCase()}</span>
+            <span className="font-mono">{order.billNo ?? order.id.slice(0, 8).toUpperCase()}</span>
             {order.isUrgent && <Badge tone="rose">URGENT</Badge>}
             <Badge tone={ORDER_TONES[order.status] ?? 'slate'}>{order.status.replaceAll('_', ' ')}</Badge>
           </h1>
