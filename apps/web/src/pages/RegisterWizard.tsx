@@ -820,7 +820,12 @@ function ReferralTypeahead({
       results={results}
       loading={loading}
       onSelect={onSelect}
-      renderResult={(d) => <span className="text-[13px] text-slate-800">{d.name}</span>}
+      renderResult={(d) => (
+        <span className="text-[13px] text-slate-800">
+          {d.doctorCode && <span className="mr-1.5 font-mono text-[11px] font-semibold text-brand-700">{d.doctorCode}</span>}
+          {d.name}
+        </span>
+      )}
     />
   );
 }

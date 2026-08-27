@@ -1,6 +1,7 @@
 import {
   ConflictException,
   Injectable,
+  NotFoundException,
   UnauthorizedException,
 } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
@@ -14,6 +15,7 @@ import { CreateUserDto } from './dto/create-user.dto';
 import { LoginDto } from './dto/login.dto';
 import { RegisterDto } from './dto/register.dto';
 import { RefreshDto } from './dto/refresh.dto';
+import { nextStaffCode } from './staff-code.util';
 
 const REFRESH_BYTES = 48;
 
@@ -80,8 +82,10 @@ export class AuthService {
     try {
       const user = await this.prisma.raw.$transaction(async (tx) => {
         await tx.organization.create({ data: { id: organizationId, name: dto.organizationName.trim() } });
+        const org = { id: organizationId, name: dto.organizationName.trim() };
+        const staffCode = await nextStaffCode(tx, org);
         return tx.user.create({
-          data: { organizationId, username, passwordHash, role: Role.admin },
+          data: { organizationId, username, passwordHash, role: Role.admin, staffCode },
         });
       });
       return { organizationId, user: { id: user.id, username: user.username, role: user.role } };
@@ -168,6 +172,23 @@ export class AuthService {
     };
   }
 
+  /** GET /api/users — list all staff in the caller's org (includes staffCode). */
+  async listUsers() {
+    const organizationId = this.tenant.requireOrganizationId();
+    return this.prisma.prisma.user.findMany({
+      where: { organizationId },
+      select: {
+        id: true,
+        staffCode: true,
+        username: true,
+        role: true,
+        isActive: true,
+        createdAt: true,
+      },
+      orderBy: { createdAt: 'asc' },
+    });
+  }
+
   /**
    * POST /api/users — admin-only staff creation for the CALLER's own org
    * (role gate on the controller; the org comes from the authenticated JWT's
@@ -182,8 +203,14 @@ export class AuthService {
       throw new ConflictException('Username is already taken');
     }
     const passwordHash = await bcrypt.hash(dto.password, 10);
-    const user = await this.prisma.prisma.user.create({
-      data: { organizationId, username, passwordHash, role: dto.role },
+    // Generate staff code inside a transaction for collision safety.
+    const org = await this.prisma.raw.organization.findUnique({ where: { id: organizationId } });
+    if (!org) throw new NotFoundException('Organization not found');
+    const user = await this.prisma.raw.$transaction(async (tx) => {
+      const staffCode = await nextStaffCode(tx, org);
+      return tx.user.create({
+        data: { organizationId, username, passwordHash, role: dto.role, staffCode },
+      });
     });
     return { id: user.id, username: user.username, role: user.role, organizationId: user.organizationId };
   }

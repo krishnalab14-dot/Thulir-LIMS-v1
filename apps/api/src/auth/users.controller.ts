@@ -1,4 +1,4 @@
-import { Body, Controller, Post } from '@nestjs/common';
+import { Body, Controller, Get, Post } from '@nestjs/common';
 import { Role } from '@prisma/client';
 import { AuthService } from './auth.service';
 import { CreateUserDto } from './dto/create-user.dto';
@@ -13,6 +13,12 @@ import { Roles } from './roles.decorator';
 @Controller('users')
 export class UsersController {
   constructor(private readonly auth: AuthService) {}
+
+  /** GET /api/users — list all staff in the caller's org. */
+  @Get()
+  listUsers() {
+    return this.auth.listUsers();
+  }
 
   @Roles(Role.admin)
   @Post()

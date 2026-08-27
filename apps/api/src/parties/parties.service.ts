@@ -6,6 +6,7 @@ import { PrismaService } from '../prisma/prisma.service';
 import { TenantContextService } from '../prisma/tenant-context.service';
 import { CreatePartyDto } from './dto/create-party.dto';
 import { GeneratePortalAccessDto } from '../portal/dto/portal-access.dto';
+import { nextDoctorCode } from './doctor-code.util';
 
 @Injectable()
 export class PartiesService {
@@ -30,6 +31,17 @@ export class PartiesService {
 
   async create(dto: CreatePartyDto) {
     const orgId = this.tenant.requireOrganizationId();
+    // Doctors get an auto-generated unique code (same atomic-counter pattern as patientUid/billNo).
+    if (dto.type === 'doctor') {
+      const org = await this.prisma.raw.organization.findUnique({ where: { id: orgId } });
+      if (!org) throw new NotFoundException('Organization not found');
+      return this.prisma.raw.$transaction(async (tx) => {
+        const doctorCode = await nextDoctorCode(tx, org);
+        return tx.party.create({
+          data: { organizationId: orgId, name: dto.name.trim(), type: dto.type, doctorCode },
+        });
+      });
+    }
     return this.prisma.prisma.party.create({ data: { organizationId: orgId, name: dto.name.trim(), type: dto.type } });
   }
 

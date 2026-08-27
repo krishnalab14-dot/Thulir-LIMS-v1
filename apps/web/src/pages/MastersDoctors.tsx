@@ -4,6 +4,7 @@ import { api } from '../lib/api';
 
 interface Party {
   id: string;
+  doctorCode?: string | null;
   name: string;
   type: string;
   active: boolean;
@@ -90,6 +91,7 @@ export function MastersDoctors() {
             <table className="w-full text-left text-sm">
               <thead>
                 <tr className="border-b border-slate-100 text-[11px] font-semibold uppercase tracking-wide text-slate-500">
+                  <th className="pb-2 pr-4">Code</th>
                   <th className="pb-2 pr-4">Name</th>
                   <th className="pb-2 pr-4">Status</th>
                   <th className="pb-2 text-right">Actions</th>
@@ -98,6 +100,13 @@ export function MastersDoctors() {
               <tbody>
                 {items.map((item) => (
                   <tr key={item.id} className="border-b border-slate-50">
+                    <td className="py-2 pr-4">
+                      {item.doctorCode ? (
+                        <span className="font-mono text-[12px] font-semibold text-brand-700">{item.doctorCode}</span>
+                      ) : (
+                        <span className="text-[11px] text-slate-300">—</span>
+                      )}
+                    </td>
                     <td className="py-2 pr-4">
                       {editingId === item.id ? (
                         <div className="flex gap-1">

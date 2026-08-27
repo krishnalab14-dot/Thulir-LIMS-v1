@@ -41,7 +41,7 @@ const MENUS: MenuDef[] = [
     ],
   },
   { label: 'Parties', items: [{ label: 'Doctors & Referrers', to: '/masters/doctors' }] },
-  { label: 'Staff', items: [{ label: 'Users & Roles', disabled: true, hint: 'Later stage' }] },
+  { label: 'Staff', items: [{ label: 'Users & Roles', to: '/masters/staff' }] },
   { label: 'Inventory', items: [{ label: 'Stock & Reagents', disabled: true, hint: 'Later stage' }] },
   { label: 'Analytics', items: [{ label: 'Reports & Dashboards', disabled: true, hint: 'Later stage' }] },
   { label: 'Settings', items: [{ label: 'Organization Settings', disabled: true, hint: 'Later stage' }] },

@@ -35,6 +35,7 @@ export interface PackageOption {
 
 export interface PartyOption {
   id: string;
+  doctorCode?: string | null;
   name: string;
   type: string;
 }

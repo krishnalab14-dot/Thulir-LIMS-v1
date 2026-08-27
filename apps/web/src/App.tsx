@@ -6,6 +6,7 @@ import { CollectionWorklist } from './pages/CollectionWorklist';
 import { ConsolidatedBill } from './pages/ConsolidatedBill';
 import { Login } from './pages/Login';
 import { MastersDoctors } from './pages/MastersDoctors';
+import { MastersStaff } from './pages/MastersStaff';
 import { MastersTests } from './pages/MastersTests';
 import { MastersTitles } from './pages/MastersTitles';
 import { OrderDetail } from './pages/OrderDetail';
@@ -209,6 +210,14 @@ export function App() {
             element={
               <RequireAuth>
                 <MastersDoctors />
+              </RequireAuth>
+            }
+          />
+          <Route
+            path="/masters/staff"
+            element={
+              <RequireAuth>
+                <MastersStaff />
               </RequireAuth>
             }
           />
