@@ -1,4 +1,4 @@
-import { useEffect, type ReactNode } from 'react';
+import React, { useEffect, type ReactNode } from 'react';
 
 export function Field({
   label,
@@ -25,10 +25,10 @@ export function Field({
   );
 }
 
-export function TextInput(props: React.InputHTMLAttributes<HTMLInputElement>) {
+export const TextInput = React.forwardRef<HTMLInputElement, React.InputHTMLAttributes<HTMLInputElement>>((props, ref) => {
   const { className = '', ...rest } = props;
-  return <input className={`thulir-input ${className}`} {...rest} />;
-}
+  return <input ref={ref} className={`thulir-input ${className}`} {...rest} />;
+});
 
 export function Select(props: React.SelectHTMLAttributes<HTMLSelectElement>) {
   const { className = '', children, ...rest } = props;

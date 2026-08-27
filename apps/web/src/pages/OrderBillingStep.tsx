@@ -128,7 +128,12 @@ export function Typeahead<T extends { id: string }>({
   renderResult: (item: T) => React.ReactNode;
 }) {
   const [focused, setFocused] = useState(false);
+  const [highlightIdx, setHighlightIdx] = useState(-1);
   const ref = useRef<HTMLDivElement>(null);
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  // Reset highlight when results change
+  useEffect(() => { setHighlightIdx(-1); }, [results]);
 
   useEffect(() => {
     if (!focused) return;
@@ -139,25 +144,52 @@ export function Typeahead<T extends { id: string }>({
     return () => document.removeEventListener('mousedown', onDocDown);
   }, [focused]);
 
+  const showDropdown = focused && query.trim().length > 0;
+  const itemCount = loading ? 0 : results.length;
+
+  function handleKeyDown(e: React.KeyboardEvent) {
+    if (!showDropdown || itemCount === 0) return;
+    if (e.key === 'ArrowDown') {
+      e.preventDefault();
+      setHighlightIdx((prev) => (prev < itemCount - 1 ? prev + 1 : 0));
+    } else if (e.key === 'ArrowUp') {
+      e.preventDefault();
+      setHighlightIdx((prev) => (prev > 0 ? prev - 1 : itemCount - 1));
+    } else if (e.key === 'Enter' && highlightIdx >= 0 && highlightIdx < itemCount) {
+      e.preventDefault();
+      onSelect(results[highlightIdx]);
+      setFocused(false);
+      setHighlightIdx(-1);
+      // Return focus to input for rapid sequential adds
+      requestAnimationFrame(() => inputRef.current?.focus());
+    } else if (e.key === 'Escape') {
+      setFocused(false);
+      setHighlightIdx(-1);
+    }
+  }
+
   return (
     <div ref={ref} className="relative">
-      <TextInput placeholder={placeholder} value={query} onChange={(e) => onQueryChange(e.target.value)} onFocus={() => setFocused(true)} />
-      {focused && query.trim().length > 0 && (
+      <TextInput ref={inputRef} placeholder={placeholder} value={query} onChange={(e) => onQueryChange(e.target.value)} onFocus={() => setFocused(true)} onKeyDown={handleKeyDown} />
+      {showDropdown && (
         <div className="absolute z-30 mt-1 max-h-64 w-full overflow-auto rounded-md border border-slate-200 bg-white py-1 shadow-lg">
           {loading ? (
             <div className="px-3 py-2 text-xs text-slate-400">Searching…</div>
           ) : results.length === 0 ? (
             <div className="px-3 py-2 text-xs text-slate-400">No matches</div>
           ) : (
-            results.map((r) => (
+            results.map((r, idx) => (
               <button
                 key={r.id}
                 type="button"
                 onClick={() => {
                   onSelect(r);
                   setFocused(false);
+                  requestAnimationFrame(() => inputRef.current?.focus());
                 }}
-                className="flex w-full items-center justify-between gap-2 px-3 py-1.5 text-left transition hover:bg-brand-50"
+                className={`flex w-full items-center justify-between gap-2 px-3 py-1.5 text-left transition ${
+                  idx === highlightIdx ? 'bg-brand-50 text-brand-800' : 'hover:bg-brand-50'
+                }`}
               >
                 {renderResult(r)}
               </button>
@@ -586,7 +618,7 @@ export function OrderBillingStep({
         {/* Left: search + line items */}
         <div className="space-y-4 lg:col-span-3">
           <div className="thulir-card p-4">
-            <h3 className="mb-3 text-sm font-semibold text-slate-700">Add Tests & Packages</h3>
+            <h3 className="mb-3 text-[12px] font-bold uppercase tracking-wide text-brand-700">Test & Profile Selection</h3>
             <div className="grid gap-3 sm:grid-cols-2">
               <Field label="Add Test">
                 <Typeahead<TestOption>
@@ -698,7 +730,7 @@ export function OrderBillingStep({
 
           <div className="thulir-card">
             <header className="flex items-center justify-between border-b border-slate-100 px-4 py-2.5">
-              <h3 className="text-sm font-semibold text-slate-700">Line Items</h3>
+              <h3 className="text-[12px] font-bold uppercase tracking-wide text-brand-700">Line Items</h3>
               <div className="flex items-center gap-2">
                 <span className="text-[11px] text-slate-400">{uniqueTestCount} unique test{uniqueTestCount === 1 ? '' : 's'}</span>
                 {canCreatePackage && (
@@ -755,7 +787,7 @@ export function OrderBillingStep({
         {/* Right: totals + payment + details */}
         <div className="space-y-4 lg:col-span-2">
           <div className="thulir-card p-4">
-            <h3 className="mb-3 text-sm font-semibold text-slate-700">Totals</h3>
+            <h3 className="mb-3 text-[12px] font-bold uppercase tracking-wide text-brand-700">Billing Details</h3>
             <dl className="space-y-2 text-sm">
               <div className="flex justify-between">
                 <dt className="text-slate-500">Subtotal</dt>
@@ -787,7 +819,7 @@ export function OrderBillingStep({
 
           <div className="thulir-card p-4">
             <div className="mb-2 flex items-center justify-between">
-              <h3 className="text-sm font-semibold text-slate-700">Payment</h3>
+              <h3 className="text-[12px] font-bold uppercase tracking-wide text-brand-700">Payment</h3>
               <Badge tone={totalEntered === 0 ? 'slate' : totalEntered >= total ? 'green' : 'amber'}>
                 {totalEntered === 0 ? `No payment — ${inr(total)} due` : totalEntered >= total ? 'Fully paid' : `Paid ${inr(totalEntered)} — ${inr(total - totalEntered)} due`}
               </Badge>
@@ -819,7 +851,7 @@ export function OrderBillingStep({
           </div>
 
           <div className="thulir-card p-4">
-            <h3 className="mb-3 text-sm font-semibold text-slate-700">Order Details</h3>
+            <h3 className="mb-3 text-[12px] font-bold uppercase tracking-wide text-brand-700">Order Details</h3>
             <div className="space-y-3">
               <div className="grid gap-3 sm:grid-cols-2">
                 <Field label="Expected Report Date (optional)">

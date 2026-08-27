@@ -409,8 +409,10 @@ export function RegisterWizard() {
             </div>
           )}
 
-          {/* §3 Field order: Name → Age → Referral Type → Referrer → remaining */}
-          <div className="mt-5 grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5">
+          {/* §3 Patient Information section */}
+          <div className="mt-5 rounded-md border border-slate-200 bg-white p-4">
+            <h3 className="mb-3 text-[12px] font-bold uppercase tracking-wide text-brand-700">Patient Information</h3>
+            <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5">
             {/* Title — first field, before Patient Name */}
             <Field label="Title">
               <Select
@@ -486,8 +488,14 @@ export function RegisterWizard() {
             <Field label="Mobile" required>
               <TextInput value={demographics.mobile} onChange={(e) => setDemographics((d) => ({ ...d, mobile: e.target.value }))} placeholder="10-digit number" maxLength={15} />
             </Field>
+            </div>
+          </div>
 
-            {/* Referral Type — moved up to sit right after Mobile */}
+          {/* §3 Referral + Additional Details section */}
+          <div className="mt-4 rounded-md border border-slate-200 bg-white p-4">
+            <h3 className="mb-3 text-[12px] font-bold uppercase tracking-wide text-brand-700">Referral & Additional Details</h3>
+            <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5">
+            {/* Referral Type */}
             <Field label="Referral Type">
               <select
                 value={referralType}
@@ -548,6 +556,7 @@ export function RegisterWizard() {
             <Field label="Address" className="sm:col-span-2 lg:col-span-3 xl:col-span-4 2xl:col-span-5">
               <TextInput value={demographics.address} onChange={(e) => setDemographics((d) => ({ ...d, address: e.target.value }))} placeholder="Street, city…" />
             </Field>
+              </div>
           </div>
 
           {/* §3 Inpatient Details — collapsed by default */}
