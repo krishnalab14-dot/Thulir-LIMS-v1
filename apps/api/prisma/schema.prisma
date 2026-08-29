@@ -125,7 +125,7 @@ model User {
   id               String       @id @default(cuid())
   organizationId   String
   organization     Organization @relation(fields: [organizationId], references: [id])
-  staffCode        String?      @unique // auto-generated: <org-prefix>-ST-<NNNN>
+  staffCode        String?      // auto-generated: <org-prefix>-ST-<NNNN>
   // Globally unique (not per-org): a username resolves to exactly one user, so
   // login has no "which org am I logging into" ambiguity — the org is read
   // off the matched user's row, not guessed from the request.
@@ -140,6 +140,7 @@ model User {
   lastLoginAt      DateTime?
   createdAt        DateTime     @default(now())
 
+  @@unique([organizationId, staffCode])
   @@index([organizationId])
 }
 
@@ -281,7 +282,7 @@ model Party {
   id             String       @id @default(cuid())
   organizationId String
   organization   Organization @relation(fields: [organizationId], references: [id])
-  doctorCode     String?      @unique // auto-generated: <org-prefix>-DR-<NNNN>
+  doctorCode     String?      // auto-generated: <org-prefix>-DR-<NNNN>
   name           String
   type           PartyType
   active         Boolean      @default(true)
@@ -296,6 +297,7 @@ model Party {
 
   referredOrders Order[]
 
+  @@unique([organizationId, doctorCode])
   @@index([organizationId])
 }
 

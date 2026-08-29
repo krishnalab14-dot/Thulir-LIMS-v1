@@ -15,33 +15,33 @@ export function buildStaffCode(prefix: string, counter: number): string {
 }
 
 /**
- * Atomically increments the staff counter and returns the next staffCode.
+ * Atomically increments the per-org staff counter and returns the next staffCode.
  *
- * Uses the same UidCounter table + INSERT ... ON CONFLICT ... RETURNING
- * pattern as patientUid, billNo, and doctorCode. The counter is global
- * (not per-org) because User.username is globally unique, so staff codes
- * must also be globally unique.
+ * Same UidCounter table + INSERT ... ON CONFLICT ... RETURNING pattern as
+ * patientUid, billNo, and doctorCode. The counter row key is `${orgId}:staff`,
+ * with NO year component — staff codes are global-per-org, not year-scoped.
+ * Each lab's staff numbering is its own clean, sequential sequence.
  *
- * Resilient to UidCounter truncation: if the counter row doesn't exist,
- * it seeds from the MAX existing staffCode number in the User table, so
- * old records are never collided with.
+ * Resilient to UidCounter truncation: if the counter row was truncated, it
+ * seeds from the MAX existing staffCode number in the User table for this org,
+ * so old records are never collided with.
  */
 export async function nextStaffCode(
   tx: Prisma.TransactionClient,
   org: { id: string; name: string },
 ): Promise<string> {
-  const key = 'global:staff';
+  const key = `${org.id}:staff`;
 
-  // Seed the counter from the MAX existing staffCode if the row was truncated.
+  // Seed from the MAX existing staffCode if the counter row was truncated.
   const maxRow = await tx.$queryRaw<Array<{ max_num: bigint | null }>>`
     SELECT COALESCE(MAX(
       CAST(SUBSTRING("staffCode" FROM '\\d+$') AS INTEGER)
-    ), 0) as max_num FROM "User" WHERE "staffCode" IS NOT NULL`;
+    ), 0) as max_num FROM "User" WHERE "staffCode" IS NOT NULL AND "organizationId" = ${org.id}`;
   const maxExisting = Number(maxRow[0]?.max_num ?? 0);
 
   const rows = await tx.$queryRaw<Array<{ counter: bigint }>>`
     INSERT INTO "UidCounter" ("id", "orgId", "year", "counter")
-    VALUES (${key}, 'global', 0, ${Math.max(maxExisting, 0) + 1})
+    VALUES (${key}, ${org.id}, 0, ${Math.max(maxExisting, 0) + 1})
     ON CONFLICT ("id") DO UPDATE SET "counter" = GREATEST("UidCounter"."counter" + 1, ${maxExisting + 1})
     RETURNING "counter"`;
   const counter = Number(rows[0]?.counter ?? 1);

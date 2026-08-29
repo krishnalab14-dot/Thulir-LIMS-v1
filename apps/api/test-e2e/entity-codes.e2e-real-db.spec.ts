@@ -3,7 +3,7 @@ import { Test } from '@nestjs/testing';
 import { PrismaClient } from '@prisma/client';
 import request from 'supertest';
 import { AppModule } from '../src/app.module';
-import { bearer, loginAdmin } from './test-helpers';
+import { bearer, loginAdmin, registerOrgAdmin } from './test-helpers';
 
 /**
  * REAL-DATABASE suite for entity codes:
@@ -135,5 +135,19 @@ describe('Entity codes real-DB — Doctor Code + Staff Code', () => {
     const staff = await plain.user.findUnique({ where: { username: `cntr_${ts}` } });
     expect(doc!.doctorCode).toMatch(/^\w{3}-DR-/);
     expect(staff!.staffCode).toMatch(/^\w{3}-ST-/);
+  });
+
+  it('staff codes are per-org — two orgs\' first staff members both get -0001', async () => {
+    // Org A already exists (authHeaders).  Register Org B.
+    await registerOrgAdmin(app, `orgb_${ts}`);
+
+    // The admin created by registerOrgAdmin IS Org B's first staff member
+    // and should have -0001, regardless of how many staff Org A has.
+    const adminB = await plain.user.findUnique({ where: { username: `other_admin_orgb_${ts}` } });
+    expect(adminB).not.toBeNull();
+    expect(adminB!.staffCode).toMatch(/-ST-0001$/);
+
+    // Format check on the staff code.
+    expect(adminB!.staffCode).toMatch(/^\w{3}-ST-/);
   });
 });
