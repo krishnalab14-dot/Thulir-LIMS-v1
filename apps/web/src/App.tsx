@@ -1,4 +1,5 @@
 import { Navigate, Route, Routes, useLocation } from 'react-router-dom';
+import { Alerts } from './pages/Alerts';
 import { ApprovalQueue } from './pages/ApprovalQueue';
 import { NavBar } from './components/NavBar';
 import { RequireAuth } from './components/RequireAuth';
@@ -227,6 +228,14 @@ export function App() {
             element={
               <RequireAuth>
                 <MastersStaff />
+              </RequireAuth>
+            }
+          />
+          <Route
+            path="/alerts"
+            element={
+              <RequireAuth>
+                <Alerts />
               </RequireAuth>
             }
           />

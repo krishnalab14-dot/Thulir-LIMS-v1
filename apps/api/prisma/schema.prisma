@@ -125,6 +125,7 @@ model Organization {
   samples           Sample[]
   testSpecifications TestSpecification[]
   billGroups        BillGroup[]
+  criticalAlerts    CriticalAlert[]
 }
 
 model User {
@@ -448,6 +449,8 @@ model OrderTest {
   approvedAt             DateTime?
   approvalSignatureStamp String?
 
+  criticalAlerts CriticalAlert[]
+
   @@index([organizationId])
   @@index([orderId])
   @@index([sampleId])
@@ -574,4 +577,27 @@ model LookupItem {
 
   @@unique([organizationId, category, value])
   @@index([organizationId, category])
+}
+
+// ---------------------------------------------------------------------------
+// Critical Value Alerting (Stage 9)
+// ---------------------------------------------------------------------------
+
+// Created automatically when a numeric result falls outside the snapshotted
+// critical thresholds. Acknowledged in-app by staff — the visual red-cell
+// flag (Stage 3) is NOT replaced, this adds the acknowledgment layer on top.
+model CriticalAlert {
+  id             String   @id @default(cuid())
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id])
+  orderTestId    String
+  orderTest      OrderTest @relation(fields: [orderTestId], references: [id])
+  value          String   // the actual entered value that triggered this
+  acknowledgedBy String?
+  acknowledgedAt DateTime?
+  createdAt      DateTime @default(now())
+
+  @@index([organizationId])
+  @@index([orderTestId])
+  @@index([organizationId, acknowledgedAt])
 }

@@ -6,12 +6,7 @@ import { TenantContextService } from '../prisma/tenant-context.service';
 import { SaveResultsDto } from './dto/save-results.dto';
 import { validateResultValue } from './result-value.util';
 
-/**
- * The snapshot/result fields Result Entry (and Stage 4's Review workspace)
- * display for one OrderTest — reused verbatim by VerifyService so the review
- * payload is the exact same shape as the entry grid (never a parallel one).
- * VerifyService extends it with the verification metadata fields.
- */
+/** The snapshot/result fields Result Entry (and Stage 4's Review workspace) display for one OrderTest — reused verbatim by VerifyService so the review payload is the exact same shape as the entry grid (never a parallel one). VerifyService extends it with the verification metadata fields. */
 export const RESULTS_ORDERTEST_SELECT = {
   id: true,
   testNameSnapshot: true,
@@ -54,6 +49,24 @@ export function toResultRow(t: ResultRowSource) {
     enteredBy: t.enteredBy,
     enteredAt: t.enteredAt,
   };
+}
+
+/**
+ * Check whether a numeric value falls outside the snapshotted critical
+ * thresholds. Returns null when thresholds are not set or the value is not
+ * a valid number (non-critical tests never generate alerts).
+ */
+function isCriticalValue(
+  value: string,
+  criticalLow: number | null | undefined,
+  criticalHigh: number | null | undefined,
+): boolean {
+  if (criticalLow == null && criticalHigh == null) return false;
+  const n = Number(value);
+  if (!Number.isFinite(n)) return false;
+  if (criticalLow != null && n < criticalLow) return true;
+  if (criticalHigh != null && n > criticalHigh) return true;
+  return false;
 }
 
 @Injectable()
@@ -145,7 +158,13 @@ export class ResultsService {
    *     enteredBy, enteredAt → null, status → pending) — never advances.
    *   - after the batch, the Order.status rollup is recomputed from ALL of
    *     the order's OrderTest statuses via the existing Stage 1 helper (not
-   *     a second implementation) and written only when it changes.
+   *     a second implementation) and written only when it actually changes.
+   *   - Stage 9: when a saved numeric resultValue falls outside the
+   *     snapshotted critical thresholds, a CriticalAlert record is created.
+   *     Duplicate prevention: if an unacknowledged alert already exists for
+   *     that orderTestId, a new one is NOT created (idempotent for the same
+   *     value re-saved). If the value changes to a different critical value,
+   *     a fresh alert is created (append-only audit trail).
    */
   async saveResults(orderId: string, dto: SaveResultsDto) {
     const order = await this.prisma.prisma.order.findUnique({
@@ -156,7 +175,7 @@ export class ResultsService {
       throw new NotFoundException('Order not found');
     }
     if (dto.entries.length === 0) {
-      return { updated: [], skipped: [], orderStatus: order.status };
+      return { updated: [], skipped: [], orderStatus: order.status, criticalAlerts: [] };
     }
 
     const rowsById = new Map(order.orderTests.map((ot) => [ot.id, ot]));
@@ -187,6 +206,13 @@ export class ResultsService {
         enteredAt: Date | null;
       }> = [];
       const skipped: Array<{ orderTestId: string; reason: string; message: string }> = [];
+      const criticalAlerts: Array<{
+        id: string;
+        orderTestId: string;
+        testNameSnapshot: string;
+        value: string;
+        createdAt: Date;
+      }> = [];
 
       for (const entry of dto.entries) {
         const ot = rowsById.get(entry.orderTestId)!;
@@ -221,6 +247,39 @@ export class ResultsService {
           enteredBy: clearing ? null : this.tenant.requireUserId(),
           enteredAt: clearing ? null : new Date(),
         });
+
+        // Stage 9: create CriticalAlert when a non-cleared, non-empty value
+        // breaches the snapshotted critical thresholds.
+        if (!clearing && entry.resultValue !== '' && isCriticalValue(entry.resultValue, ot.snapshottedCriticalLow, ot.snapshottedCriticalHigh)) {
+          // Duplicate prevention: skip if an unacknowledged alert already
+          // exists for this exact value on the same orderTest.
+          const existing = await tx.criticalAlert.findFirst({
+            where: {
+              orderTestId: ot.id,
+              acknowledgedAt: null,
+              value: entry.resultValue,
+            },
+            select: { id: true },
+          });
+
+          if (!existing) {
+            const alert = await tx.criticalAlert.create({
+              data: {
+                organizationId: this.tenant.requireOrganizationId(),
+                orderTestId: ot.id,
+                value: entry.resultValue,
+              },
+              select: { id: true, createdAt: true },
+            });
+            criticalAlerts.push({
+              id: alert.id,
+              orderTestId: ot.id,
+              testNameSnapshot: ot.testNameSnapshot,
+              value: entry.resultValue,
+              createdAt: alert.createdAt,
+            });
+          }
+        }
       }
 
       // Auto-complete cascade: recompute the derived rollup from ALL
@@ -235,7 +294,7 @@ export class ResultsService {
         }
       }
 
-      return { updated, skipped, orderStatus };
+      return { updated, skipped, orderStatus, criticalAlerts };
     });
   }
 }

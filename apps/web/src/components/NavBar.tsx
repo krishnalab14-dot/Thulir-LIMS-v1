@@ -1,6 +1,7 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useAuth } from '../auth/useAuth';
+import { api } from '../lib/api';
 
 interface MenuItem {
   label: string;
@@ -120,6 +121,45 @@ function MenuDropdown({ menu }: { menu: MenuDef }) {
   );
 }
 
+/** Bell icon with unacknowledged alert count badge. Polls every 30s. */
+function AlertBell() {
+  const [count, setCount] = useState(0);
+  const navigate = useNavigate();
+
+  const fetchCount = useCallback(async () => {
+    try {
+      const res = await api.get<{ count: number }>('/alerts/count');
+      setCount(typeof res === 'object' && res !== null && typeof res.count === 'number' ? res.count : 0);
+    } catch {
+      // silently ignore — badge will stay stale until next poll
+    }
+  }, []);
+
+  useEffect(() => {
+    void fetchCount();
+    const id = setInterval(fetchCount, 30_000);
+    return () => clearInterval(id);
+  }, [fetchCount]);
+
+  return (
+    <button
+      onClick={() => navigate('/alerts')}
+      className="relative inline-flex h-8 w-8 items-center justify-center rounded-md border border-white/20 text-slate-100 transition hover:bg-white/10"
+      title={count > 0 ? `${count} unacknowledged critical alert${count === 1 ? '' : 's'}` : 'No pending alerts'}
+    >
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+        <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9" />
+        <path d="M13.73 21a2 2 0 0 1-3.46 0" />
+      </svg>
+      {count > 0 && (
+        <span className="absolute -right-1 -top-1 flex h-4 min-w-[16px] items-center justify-center rounded-full bg-rose-600 px-1 text-[10px] font-bold text-white">
+          {count > 99 ? '99+' : count}
+        </span>
+      )}
+    </button>
+  );
+}
+
 export function NavBar() {
   const navigate = useNavigate();
   const { user, logout, canVerify, canApprove, canManageMasters } = useAuth();
@@ -155,7 +195,7 @@ export function NavBar() {
           </span>
           <span className="leading-tight">
             <span className="block text-sm font-bold tracking-tight text-white">Thulir LIMS</span>
-            <span className="block text-[10px] font-medium uppercase tracking-wider text-brand-300">v2 · Stage 7</span>
+            <span className="block text-[10px] font-medium uppercase tracking-wider text-brand-300">v2 · Stage 9</span>
           </span>
         </Link>
 
@@ -175,6 +215,7 @@ export function NavBar() {
             </svg>
             New Registration
           </button>
+          <AlertBell />
           {user && (
             <span className="ml-1 inline-flex h-8 items-center gap-2 rounded-md border border-white/15 px-2.5 text-[12px] font-medium text-slate-100" title={`${user.role} · ${user.organizationId}`}>
               <span className="flex h-5 w-5 items-center justify-center rounded-full bg-brand-500 text-[10px] font-bold text-white">

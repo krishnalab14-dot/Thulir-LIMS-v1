@@ -19,6 +19,8 @@ function orderRow(overrides: Record<string, unknown> = {}) {
         snapshottedResultType: 'numeric',
         snapshottedResultOptions: null,
         snapshottedResultOptionsAbnormal: [],
+        snapshottedCriticalLow: 40,
+        snapshottedCriticalHigh: 400,
         sample: { status: 'collected' },
       },
       {
@@ -68,6 +70,12 @@ describe('ResultsService.saveResults (mock-based unit coverage; real-DB e2e cove
         findMany: jest.fn().mockResolvedValue([{ status: 'entered' }]),
       },
       order: { update: jest.fn().mockResolvedValue({}) },
+      // Stage 9: critical alert mocks — findFirst returns null (no duplicate),
+      // create returns a minimal alert shape.
+      criticalAlert: {
+        findFirst: jest.fn().mockResolvedValue(null),
+        create: jest.fn().mockResolvedValue({ id: 'alert_test', createdAt: new Date() }),
+      },
     };
     $transaction.mockImplementation((cb: (t: never) => unknown) => cb(tx as never));
     orderFindUnique.mockResolvedValue(orderRow());
@@ -155,5 +163,67 @@ describe('ResultsService.saveResults (mock-based unit coverage; real-DB e2e cove
     expect(tx.orderTest.findMany).not.toHaveBeenCalled();
     expect(tx.order.update).not.toHaveBeenCalled();
     expect(result.orderStatus).toBe('billed');
+  });
+
+  // ---------------------------------------------------------------------------
+  // Stage 9: critical alert creation in saveResults
+  // ---------------------------------------------------------------------------
+
+  it('creates a CriticalAlert when a non-cleared value breaches critical thresholds', async () => {
+    const { tx, promise } = runSave([{ orderTestId: 'ot_num', resultValue: '25' }]); // 25 < criticalLow (40)
+    const result = await promise;
+
+    expect(result.criticalAlerts).toHaveLength(1);
+    expect(result.criticalAlerts[0].value).toBe('25');
+    expect(result.criticalAlerts[0].testNameSnapshot).toBe('FBS');
+    expect(tx.criticalAlert.findFirst).toHaveBeenCalledWith({
+      where: { orderTestId: 'ot_num', acknowledgedAt: null, value: '25' },
+      select: { id: true },
+    });
+    expect(tx.criticalAlert.create).toHaveBeenCalledWith({
+      data: { organizationId: ORG, orderTestId: 'ot_num', value: '25' },
+      select: { id: true, createdAt: true },
+    });
+  });
+
+  it('does not create a CriticalAlert for a non-critical value', async () => {
+    const { tx, promise } = runSave([{ orderTestId: 'ot_num', resultValue: '92' }]); // 92 is within ref 70-99
+    const result = await promise;
+
+    expect(result.criticalAlerts).toHaveLength(0);
+    expect(tx.criticalAlert.findFirst).not.toHaveBeenCalled();
+    expect(tx.criticalAlert.create).not.toHaveBeenCalled();
+  });
+
+  it('does not create a duplicate when an unacknowledged alert for the same value exists', async () => {
+    const tx = {
+      orderTest: {
+        updateMany: jest.fn().mockResolvedValue({ count: 1 }),
+        findMany: jest.fn().mockResolvedValue([{ status: 'entered' }]),
+      },
+      order: { update: jest.fn().mockResolvedValue({}) },
+      criticalAlert: {
+        // findFirst returns an existing alert → skip creation
+        findFirst: jest.fn().mockResolvedValue({ id: 'existing_alert' }),
+        create: jest.fn(),
+      },
+    };
+    $transaction.mockImplementation((cb: (t: never) => unknown) => cb(tx as never));
+    orderFindUnique.mockResolvedValue(orderRow());
+
+    const result = await tenant.runAs({ organizationId: ORG, userId: 'user_test' }, () =>
+      service.saveResults('ord1', { entries: [{ orderTestId: 'ot_num', resultValue: '25' }] as never }),
+    );
+
+    expect(result.criticalAlerts).toHaveLength(0);
+    expect(tx.criticalAlert.create).not.toHaveBeenCalled();
+  });
+
+  it('clearing a value (empty resultValue) never creates a CriticalAlert', async () => {
+    const { tx, promise } = runSave([{ orderTestId: 'ot_num', resultValue: '', expectedValue: '25' }]);
+    const result = await promise;
+
+    expect(result.criticalAlerts).toHaveLength(0);
+    expect(tx.criticalAlert.findFirst).not.toHaveBeenCalled();
   });
 });

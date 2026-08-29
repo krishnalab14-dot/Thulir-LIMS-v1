@@ -1,6 +1,7 @@
 import { Module, MiddlewareConsumer, NestModule, RequestMethod } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
 import { APP_GUARD } from '@nestjs/core';
+import { AlertsModule } from './alerts/alerts.module';
 import { ApprovalModule } from './approval/approval.module';
 import { AuthModule } from './auth/auth.module';
 import { BillGroupsModule } from './bill-groups/bill-groups.module';
@@ -27,8 +28,8 @@ import { VerifyModule } from './verify/verify.module';
     ConfigModule.forRoot({ isGlobal: true }),
     SupabaseModule,
     PrismaModule,
-    // Stage 7 real auth — JwtModule is global (middleware needs JwtService),
-    // and the two guards below are registered GLOBAL (APP_GUARD): every route
+    // Stage 7 real auth — JwtModule is global (middleware needs JwtService), and
+    // the two guards below are registered GLOBAL (APP_GUARD): every route
     // requires a valid access token unless marked @Public(), and every route
     // carrying @Roles(...) is enforced with a 403 for other roles.
     AuthModule,
@@ -49,6 +50,8 @@ import { VerifyModule } from './verify/verify.module';
     // (type: 'patient' | 'referrer') are rejected by the global JwtAuthGuard
     // (cross-boundary protection) and accepted only by PortalJwtAuthGuard.
     PortalModule,
+    // Stage 9: critical-value alerting (in-app acknowledgment).
+    AlertsModule,
   ],
   providers: [
     { provide: APP_GUARD, useClass: JwtAuthGuard },

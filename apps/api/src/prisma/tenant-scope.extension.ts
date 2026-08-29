@@ -21,6 +21,7 @@ const TENANT_MODELS = new Set([
   'Payment',
   'Sample',
   'TestSpecification',
+  'CriticalAlert',
 ]);
 
 /** Pure helper: AND-combine a caller's where with a hard organizationId filter. */

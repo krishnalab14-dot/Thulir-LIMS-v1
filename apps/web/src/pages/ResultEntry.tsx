@@ -38,10 +38,19 @@ interface ResultsData {
   summary: { total: number; entered: number };
 }
 
+interface CriticalAlertInfo {
+  id: string;
+  orderTestId: string;
+  testNameSnapshot: string;
+  value: string;
+  createdAt: string;
+}
+
 interface SaveResponse {
   updated: Array<{ orderTestId: string; resultValue: string | null; status: string; enteredAt: string | null }>;
   skipped: Array<{ orderTestId: string; reason: string; message: string }>;
   orderStatus: string;
+  criticalAlerts: CriticalAlertInfo[];
 }
 
 const GENDER_SHORT: Record<string, string> = { male: 'M', female: 'F', other: 'Other' };
@@ -63,6 +72,12 @@ export function ResultEntry() {
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
   const [focusedId, setFocusedId] = useState('');
   const [expandedText, setExpandedText] = useState<Record<string, boolean>>({});
+
+  // Stage 9: critical alert modal — the first unacknowledged alert from the
+  // last save. Non-dismissable: only the explicit "Acknowledge" button closes it.
+  const [pendingAlert, setPendingAlert] = useState<CriticalAlertInfo | null>(null);
+  const [acknowledging, setAcknowledging] = useState(false);
+  const [ackError, setAckError] = useState('');
 
   const valuesRef = useRef(values);
   const savedRef = useRef(savedValues);
@@ -112,6 +127,21 @@ export function ResultEntry() {
   const rowsById = useMemo(() => new Map(rowOrder.map((r) => [r.id, r])), [rowOrder]);
   const enteredCount = useMemo(() => rowOrder.filter((r) => (savedRef.current[r.id] ?? null) != null).length, [rowOrder]);
 
+  /** Acknowledge a critical alert — called from the modal. */
+  const handleAcknowledge = useCallback(async (alertId: string) => {
+    setAcknowledging(true);
+    setAckError('');
+    try {
+      await api.put(`/alerts/${alertId}/acknowledge`);
+      setPendingAlert(null);
+      setAckError('');
+    } catch (e) {
+      setAckError(e instanceof ApiError ? e.message : 'Failed to acknowledge alert');
+    } finally {
+      setAcknowledging(false);
+    }
+  }, []);
+
   /** Autosave one row through the validated, concurrency-safe endpoint. */
   const saveRow = useCallback(
     async (rowId: string) => {
@@ -149,6 +179,11 @@ export function ResultEntry() {
           setFieldErrors((prev) => ({ ...prev, [rowId]: '' }));
         }
         setData((d) => (d ? { ...d, order: { ...d.order, status: res.orderStatus } } : d));
+
+        // Stage 9: show critical alert modal if any alerts were created
+        if (res.criticalAlerts.length > 0 && !pendingAlert) {
+          setPendingAlert(res.criticalAlerts[0]);
+        }
       } catch (e) {
         setError(e instanceof ApiError ? e.message : 'Save failed');
       } finally {
@@ -160,7 +195,7 @@ export function ResultEntry() {
         }
       }
     },
-    [id, load, rowsById],
+    [id, load, rowsById, pendingAlert],
   );
 
   const handleBlur = useCallback(
@@ -241,12 +276,17 @@ export function ResultEntry() {
         return;
       }
       setData((d) => (d ? { ...d, order: { ...d.order, status: res.orderStatus } } : d));
+
+      // Stage 9: show critical alert modal if any alerts were created
+      if (res.criticalAlerts.length > 0 && !pendingAlert) {
+        setPendingAlert(res.criticalAlerts[0]);
+      }
     } catch (e) {
       setError(e instanceof ApiError ? e.message : 'Mark All Normal failed');
     } finally {
       setSavingCount((c) => c - 1);
     }
-  }, [id, load, rowOrder]);
+  }, [id, load, rowOrder, pendingAlert]);
 
   if (loading) return <Spinner label="Loading results…" />;
   if (error) return <p className="rounded-md border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-700">{error}</p>;
@@ -477,6 +517,72 @@ export function ResultEntry() {
             </ul>
           </Card>
         ))}
+      </div>
+
+      {/* Stage 9: Critical Alert Modal — non-dismissable, only closes on Acknowledge */}
+      <CriticalAlertModal
+        alert={pendingAlert}
+        acknowledging={acknowledging}
+        error={ackError}
+        onAcknowledge={handleAcknowledge}
+      />
+    </div>
+  );
+}
+
+/**
+ * Non-dismissable modal for critical value alerts. Cannot be closed by
+ * pressing Escape or clicking outside — only by clicking "Acknowledge".
+ * This matches how genuinely critical lab values should be handled (can't
+ * be casually scrolled past).
+ */
+function CriticalAlertModal({
+  alert,
+  acknowledging,
+  error,
+  onAcknowledge,
+}: {
+  alert: CriticalAlertInfo | null;
+  acknowledging: boolean;
+  error: string;
+  onAcknowledge: (id: string) => void;
+}) {
+  if (!alert) return null;
+
+  return (
+    <div className="fixed inset-0 z-[70] flex items-center justify-center bg-slate-900/60 p-4">
+      <div className="w-full max-w-sm rounded-lg border-2 border-rose-300 bg-white shadow-2xl">
+        <header className="flex items-center gap-2 border-b border-rose-200 bg-rose-50 px-4 py-3">
+          <span className="flex h-7 w-7 items-center justify-center rounded-full bg-rose-600">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z" />
+              <line x1="12" y1="9" x2="12" y2="13" />
+              <line x1="12" y1="17" x2="12.01" y2="17" />
+            </svg>
+          </span>
+          <h3 className="text-sm font-bold text-rose-800">Critical Value Alert</h3>
+        </header>
+        <div className="px-4 py-4">
+          <p className="text-[13px] text-slate-700">
+            <span className="font-semibold">{alert.testNameSnapshot}</span> has a critical value of{' '}
+            <span className="font-mono font-bold text-rose-700">{alert.value}</span>.
+          </p>
+          <p className="mt-2 text-[12px] text-slate-500">
+            This value is outside the defined critical threshold range. Please verify the result and acknowledge this alert.
+          </p>
+          {error && (
+            <p className="mt-2 rounded-md bg-rose-50 px-2 py-1.5 text-[12px] text-rose-700">{error}</p>
+          )}
+        </div>
+        <footer className="flex justify-end gap-2 border-t border-slate-100 px-4 py-3">
+          <button
+            onClick={() => onAcknowledge(alert.id)}
+            disabled={acknowledging}
+            className="rounded-md bg-rose-600 px-4 py-2 text-[13px] font-semibold text-white transition hover:bg-rose-700 disabled:opacity-50"
+          >
+            {acknowledging ? 'Acknowledging…' : 'Acknowledge'}
+          </button>
+        </footer>
       </div>
     </div>
   );
