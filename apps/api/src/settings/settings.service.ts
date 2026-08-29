@@ -39,7 +39,7 @@ export class SettingsService {
    */
   async updateOrgSettings(dto: UpdateOrgSettingsDto) {
     const orgId = this.tenant.requireOrganizationId();
-    const clear = (v: string | undefined) => (v?.trim() ? v.trim() : null);
+    const clear = (v: string | null | undefined) => (v?.trim() ? v.trim() : null);
     const data: Record<string, string | null> = {};
     if (dto.address !== undefined) data.address = clear(dto.address);
     if (dto.phone !== undefined) data.phone = clear(dto.phone);
