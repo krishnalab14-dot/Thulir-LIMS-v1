@@ -13,7 +13,7 @@ function approvedOrderRow(overrides: Record<string, unknown> = {}) {
     isUrgent: false,
     createdAt: new Date('2026-08-14T08:00:00Z'),
     reportGeneratedAt: null,
-    organization: { id: ORG, name: 'Thulir Demo Lab' },
+    organization: { id: ORG, name: 'Thulir Demo Lab', address: null, phone: null, email: null, nablAccreditationNumber: null, logoUrl: null },
     patient: { patientUid: 'THU-2026-0001', firstName: 'Ravi', lastName: 'Kumar', gender: 'male', dob: new Date('1990-01-01'), ageAtRegistration: null },
     samples: [
       {
@@ -110,7 +110,7 @@ describe('ReportsService (mock-based unit coverage; real-DB e2e covers the HTTP 
       }),
     );
     expect(report.patient).toEqual(expect.objectContaining({ patientUid: 'THU-2026-0001', firstName: 'Ravi', ageYears: expect.any(Number) }));
-    expect(report.lab).toEqual({ labName: 'Thulir Demo Lab', labAddress: null });
+    expect(report.lab).toEqual({ labName: 'Thulir Demo Lab', labAddress: null, labPhone: null, labEmail: null, nablAccreditationNumber: null, logoUrl: null });
     expect(report.signature.stamp).toBe('AABBCCDD00112233');
     expect(report.verify.code).toMatch(/^THU-VR-[0-9A-Z]+-[0-9A-F]{4}$/);
     expect(report.verify.path).toBe(`/verify-report?orderNumber=${encodeURIComponent(report.verify.code)}`);

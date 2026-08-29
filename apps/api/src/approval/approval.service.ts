@@ -90,7 +90,7 @@ export class ApprovalService {
       where: { id: orderId },
       include: {
         patient: true,
-        organization: { select: { id: true, name: true } },
+        organization: { select: { id: true, name: true, address: true, phone: true, email: true, nablAccreditationNumber: true, logoUrl: true } },
         samples: {
           orderBy: { createdAt: 'asc' },
           include: {
@@ -137,9 +137,11 @@ export class ApprovalService {
       summary: { total, verified, approved },
       preview: {
         labName: order.organization.name,
-        // Printable org address fields don't exist yet (Settings is a later
-        // stage) — the letterhead renders the name only, per §2.
-        labAddress: null,
+        labAddress: order.organization.address,
+        labPhone: order.organization.phone,
+        labEmail: order.organization.email,
+        nablAccreditationNumber: order.organization.nablAccreditationNumber,
+        logoUrl: order.organization.logoUrl,
         signatureRef: this.tenant.requireUserId(), // the authenticated pathologist signing the preview
         verificationCode: verificationCode(order.id),
       },

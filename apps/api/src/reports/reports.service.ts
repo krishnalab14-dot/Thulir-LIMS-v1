@@ -32,7 +32,7 @@ export class ReportsService {
       where: { id: orderId },
       include: {
         patient: true,
-        organization: { select: { id: true, name: true } },
+        organization: { select: { id: true, name: true, address: true, phone: true, email: true, nablAccreditationNumber: true, logoUrl: true } },
         samples: {
           orderBy: { createdAt: 'asc' },
           include: {
@@ -111,9 +111,11 @@ export class ReportsService {
       summary: { total: rows.length },
       lab: {
         labName: order.organization.name,
-        // Settings' printable-details page doesn't exist yet (later stage) —
-        // the letterhead renders the name only; address fields are a flagged gap.
-        labAddress: null,
+        labAddress: order.organization.address,
+        labPhone: order.organization.phone,
+        labEmail: order.organization.email,
+        nablAccreditationNumber: order.organization.nablAccreditationNumber,
+        logoUrl: order.organization.logoUrl,
       },
       signature: {
         // StaffDetail display names are a later stage; the reference is the

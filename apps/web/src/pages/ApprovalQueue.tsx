@@ -55,7 +55,7 @@ interface ReviewData {
   patient: { patientUid: string; firstName: string; lastName: string; gender: string; ageYears: number };
   samples: ReviewSample[];
   summary: { total: number; verified: number; approved: number };
-  preview: { labName: string; labAddress: string | null; signatureRef: string; verificationCode: string };
+  preview: { labName: string; labAddress: string | null; labPhone: string | null; labEmail: string | null; nablAccreditationNumber: string | null; logoUrl: string | null; signatureRef: string; verificationCode: string };
 }
 
 interface ApproveResponse {
@@ -76,6 +76,11 @@ function PreviewSheet({ review }: { review: ReviewData }) {
 
   const data: ReportSheetData = {
     labName: review.preview.labName,
+    labAddress: review.preview.labAddress,
+    labPhone: review.preview.labPhone,
+    labEmail: review.preview.labEmail,
+    nablAccreditationNumber: review.preview.nablAccreditationNumber,
+    logoUrl: review.preview.logoUrl,
     patient: review.patient,
     order: review.order,
     rows,

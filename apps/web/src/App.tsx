@@ -13,6 +13,7 @@ import { OrderDetail } from './pages/OrderDetail';
 import { Orders } from './pages/Orders';
 import { RegisterWizard } from './pages/RegisterWizard';
 import { Report } from './pages/Report';
+import { Settings } from './pages/Settings';
 import { ResultEntry } from './pages/ResultEntry';
 import { SampleDetail } from './pages/SampleDetail';
 import { VerifyQueue } from './pages/VerifyQueue';
@@ -210,6 +211,14 @@ export function App() {
             element={
               <RequireAuth>
                 <MastersDoctors />
+              </RequireAuth>
+            }
+          />
+          <Route
+            path="/settings"
+            element={
+              <RequireAuth>
+                <Settings />
               </RequireAuth>
             }
           />

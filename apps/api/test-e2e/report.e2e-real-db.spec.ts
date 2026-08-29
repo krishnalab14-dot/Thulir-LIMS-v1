@@ -189,8 +189,14 @@ describe('Stage 6 real-DB verification — report + public verify', () => {
     expect(glu.approvalSignatureStamp).toMatch(/^[0-9A-F]{16}$/);
     expect(body.summary).toEqual({ total: 2 });
 
-    // Lab letterhead (name only — printable address fields are a later stage).
-    expect(body.lab).toEqual({ labName: 'Thulir Demo Lab', labAddress: null });
+    // Lab letterhead — printable details from Settings (§23).
+    expect(body.lab.labName).toBe('Thulir Demo Lab');
+    // These may be blank or populated depending on test ordering (Settings test runs first).
+    expect(body.lab.labAddress === null || typeof body.lab.labAddress === 'string').toBe(true);
+    expect(body.lab.labPhone === null || typeof body.lab.labPhone === 'string').toBe(true);
+    expect(body.lab.labEmail === null || typeof body.lab.labEmail === 'string').toBe(true);
+    expect(body.lab.nablAccreditationNumber === null || typeof body.lab.nablAccreditationNumber === 'string').toBe(true);
+    expect(body.lab.logoUrl === null || typeof body.lab.logoUrl === 'string').toBe(true);
     expect(body.signature.signatureRef).toBe(adminUserId);
     expect(body.signature.stamp).toMatch(/^[0-9A-F]{16}$/);
 

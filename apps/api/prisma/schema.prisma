@@ -104,6 +104,12 @@ enum RejectionReason {
 model Organization {
   id        String   @id @default(cuid())
   name      String
+  address        String?  // printable letterhead — street, city, state, pin code
+  phone          String?  // lab phone number
+  email          String?  // lab email
+  nablAccreditationNumber String?  // NABL accreditation ID
+  gstNumber      String?  // GST registration number
+  logoUrl        String?  // URL to hosted logo image (no file upload infrastructure yet)
   createdAt DateTime @default(now())
 
   users       User[]

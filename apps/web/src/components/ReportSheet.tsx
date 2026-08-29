@@ -29,6 +29,11 @@ export interface ReportSheetRow {
 
 export interface ReportSheetData {
   labName: string;
+  labAddress?: string | null;
+  labPhone?: string | null;
+  labEmail?: string | null;
+  nablAccreditationNumber?: string | null;
+  logoUrl?: string | null;
   patient: { patientUid: string; firstName: string; lastName: string; gender: string; ageYears: number };
   order: { id: string; isUrgent: boolean };
   rows: ReportSheetRow[];
@@ -61,8 +66,25 @@ export function ReportSheet({ data }: { data: ReportSheetData }) {
     <div className="report-sheet flex min-h-[1123px] w-[794px] flex-col bg-white px-10 py-8 text-slate-800 shadow-xl ring-1 ring-slate-200">
       {/* Letterhead */}
       <div className="border-b-2 border-slate-800 pb-3 text-center">
+        {data.logoUrl && (
+          <div className="mb-2">
+            <img src={data.logoUrl} alt="Lab logo" className="mx-auto h-14 w-auto object-contain" onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }} />
+          </div>
+        )}
         <div className="text-2xl font-bold leading-tight tracking-tight">{data.labName}</div>
         <div className="mt-1 text-[10px] font-semibold uppercase tracking-[0.3em] text-slate-500">Pathology Laboratory</div>
+        {data.nablAccreditationNumber && (
+          <div className="mt-1 text-[10px] font-medium text-slate-500">NABL Accredited · {data.nablAccreditationNumber}</div>
+        )}
+        {(data.labAddress || data.labPhone || data.labEmail) && (
+          <div className="mt-1 text-[10px] text-slate-500">
+            {data.labAddress && <span>{data.labAddress}</span>}
+            {data.labAddress && (data.labPhone || data.labEmail) && <span> · </span>}
+            {data.labPhone && <span>{data.labPhone}</span>}
+            {data.labPhone && data.labEmail && <span> · </span>}
+            {data.labEmail && <span>{data.labEmail}</span>}
+          </div>
+        )}
       </div>
 
       {data.reportDate && (

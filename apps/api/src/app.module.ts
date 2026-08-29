@@ -18,6 +18,7 @@ import { TenantMiddleware } from './prisma/tenant.middleware';
 import { PublicVerifyModule } from './public-verify/public-verify.module';
 import { ReportsModule } from './reports/reports.module';
 import { SamplesModule } from './samples/samples.module';
+import { SettingsModule } from './settings/settings.module';
 import { SupabaseModule } from './supabase/supabase.module';
 import { VerifyModule } from './verify/verify.module';
 
@@ -42,6 +43,7 @@ import { VerifyModule } from './verify/verify.module';
     VerifyModule,
     ApprovalModule,
     ReportsModule,
+    SettingsModule,
     PublicVerifyModule,
     // Stage 8: patient/referrer self-service portals. Portal auth tokens
     // (type: 'patient' | 'referrer') are rejected by the global JwtAuthGuard

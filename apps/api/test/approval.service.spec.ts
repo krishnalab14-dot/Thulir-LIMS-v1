@@ -48,7 +48,7 @@ function reviewOrderRow() {
     status: 'partially_approved',
     isUrgent: false,
     createdAt: new Date(),
-    organization: { id: ORG, name: 'Thulir Demo Lab' },
+    organization: { id: ORG, name: 'Thulir Demo Lab', address: null, phone: null, email: null, nablAccreditationNumber: null, logoUrl: null },
     patient: { patientUid: 'THU-2026-0001', firstName: 'Ravi', lastName: 'Kumar', gender: 'male', dob: new Date('1990-01-01'), ageAtRegistration: null },
     samples: [
       {
@@ -198,6 +198,10 @@ describe('ApprovalService (mock-based unit coverage; real-DB e2e covers the conc
       expect.objectContaining({
         labName: 'Thulir Demo Lab',
         labAddress: null,
+        labPhone: null,
+        labEmail: null,
+        nablAccreditationNumber: null,
+        logoUrl: null,
         signatureRef: 'user_test',
         verificationCode: expect.stringMatching(/^THU-VR-[0-9A-Z]+-[0-9A-F]{4}$/),
       }),

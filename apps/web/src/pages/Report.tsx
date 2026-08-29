@@ -24,7 +24,7 @@ interface ReportData {
   patient: { patientUid: string; firstName: string; lastName: string; gender: string; ageYears: number; dob: string | null };
   samples: Array<{ id: string; barcodeValue: string; sampleType: { id: string; name: string; code: string | null }; orderTests: ReportRow[] }>;
   summary: { total: number };
-  lab: { labName: string; labAddress: string | null };
+  lab: { labName: string; labAddress: string | null; labPhone: string | null; labEmail: string | null; nablAccreditationNumber: string | null; logoUrl: string | null };
   signature: { signatureRef: string; stamp: string | null; approvedAt: string | null };
   verify: { code: string; path: string };
 }
@@ -89,6 +89,11 @@ export function Report() {
   const verifyUrl = `${window.location.origin}${data.verify.path}`;
   const sheet: ReportSheetData = {
     labName: data.lab.labName,
+    labAddress: data.lab.labAddress,
+    labPhone: data.lab.labPhone,
+    labEmail: data.lab.labEmail,
+    nablAccreditationNumber: data.lab.nablAccreditationNumber,
+    logoUrl: data.lab.logoUrl,
     patient: data.patient,
     order: data.order,
     rows,

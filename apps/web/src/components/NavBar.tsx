@@ -44,7 +44,7 @@ const MENUS: MenuDef[] = [
   { label: 'Staff', items: [{ label: 'Users & Roles', to: '/masters/staff' }] },
   { label: 'Inventory', items: [{ label: 'Stock & Reagents', disabled: true, hint: 'Later stage' }] },
   { label: 'Analytics', items: [{ label: 'Reports & Dashboards', disabled: true, hint: 'Later stage' }] },
-  { label: 'Settings', items: [{ label: 'Organization Settings', disabled: true, hint: 'Later stage' }] },
+  { label: 'Settings', items: [{ label: 'Organization Settings', to: '/settings' }] },
   { label: 'Audit', items: [{ label: 'Audit Trail', disabled: true, hint: 'Later stage' }] },
 ];
 
