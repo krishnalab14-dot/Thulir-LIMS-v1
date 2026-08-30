@@ -22,6 +22,10 @@ const TENANT_MODELS = new Set([
   'Sample',
   'TestSpecification',
   'CriticalAlert',
+  'InventorySupplier',
+  'InventoryItem',
+  'InventoryTransaction',
+  'TestInventoryRequirement',
 ]);
 
 /** Pure helper: AND-combine a caller's where with a hard organizationId filter. */

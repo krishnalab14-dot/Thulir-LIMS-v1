@@ -2,6 +2,7 @@ import { ConflictException, Injectable, NotFoundException } from '@nestjs/common
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { TenantContextService } from '../prisma/tenant-context.service';
+import { InventoryService } from '../inventory/inventory.service';
 
 /** Fields needed to render an alert in the inbox (patient/order context). */
 const ALERT_INCLUDE = {
@@ -35,6 +36,7 @@ export class AlertsService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly tenant: TenantContextService,
+    private readonly inventoryService: InventoryService,
   ) {}
 
   /**
@@ -106,10 +108,13 @@ export class AlertsService {
 
   /**
    * Count unacknowledged alerts (for the NavBar badge).
+   * Includes both critical-value alerts AND inventory alerts (low-stock + expiring).
    */
   async unacknowledgedCount(): Promise<number> {
-    return this.prisma.prisma.criticalAlert.count({
+    const criticalCount = await this.prisma.prisma.criticalAlert.count({
       where: { acknowledgedAt: null },
     });
+    const inventoryCount = await this.inventoryService.alertCount();
+    return criticalCount + inventoryCount;
   }
 }

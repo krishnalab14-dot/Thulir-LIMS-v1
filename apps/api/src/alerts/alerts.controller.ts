@@ -23,6 +23,7 @@ export class AlertsController {
 
   /**
    * GET /api/alerts/count — unacknowledged count for the NavBar badge.
+   * Includes both critical-value alerts AND inventory alerts.
    */
   @Get('count')
   async count() {

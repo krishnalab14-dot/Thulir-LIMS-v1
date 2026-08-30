@@ -8,6 +8,7 @@ import { BillGroupsModule } from './bill-groups/bill-groups.module';
 import { JwtAuthGuard } from './auth/jwt-auth.guard';
 import { RolesGuard } from './auth/roles.guard';
 import { InvoicesModule } from './invoices/invoices.module';
+import { InventoryModule } from './inventory/inventory.module';
 import { LookupItemsModule } from './lookup-items/lookup-items.module';
 import { MastersModule } from './masters/masters.module';
 import { OrdersModule } from './orders/orders.module';
@@ -52,6 +53,8 @@ import { VerifyModule } from './verify/verify.module';
     PortalModule,
     // Stage 9: critical-value alerting (in-app acknowledgment).
     AlertsModule,
+    // Stage 10: inventory / reagent stock tracking.
+    InventoryModule,
   ],
   providers: [
     { provide: APP_GUARD, useClass: JwtAuthGuard },

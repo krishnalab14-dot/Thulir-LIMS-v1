@@ -97,6 +97,11 @@ enum RejectionReason {
   other
 }
 
+enum InventoryDirection {
+  in
+  out
+}
+
 // ---------------------------------------------------------------------------
 // Models
 // ---------------------------------------------------------------------------
@@ -126,6 +131,10 @@ model Organization {
   testSpecifications TestSpecification[]
   billGroups        BillGroup[]
   criticalAlerts    CriticalAlert[]
+
+  inventorySuppliers        InventorySupplier[]
+  inventoryItems            InventoryItem[]
+  inventoryTransactions     InventoryTransaction[]
 }
 
 model User {
@@ -233,9 +242,10 @@ model MasterTest {
   // from the snapshot afterwards.
   unit           String?
 
-  specifications TestSpecification[]
-  packageItems   MasterTestPackageItem[]
-  orderTests     OrderTest[]
+  specifications    TestSpecification[]
+  packageItems      MasterTestPackageItem[]
+  orderTests        OrderTest[]
+  testRequirements  TestInventoryRequirement[]
 
   @@index([organizationId])
 }
@@ -600,4 +610,79 @@ model CriticalAlert {
   @@index([organizationId])
   @@index([orderTestId])
   @@index([organizationId, acknowledgedAt])
+}
+
+// ---------------------------------------------------------------------------
+// Inventory / Reagent Stock Tracking (Stage 10)
+// ---------------------------------------------------------------------------
+// Ledger-based stock: every movement is an append-only row. Current stock is
+// computed as SUM(in) - SUM(out), never a mutable counter.
+
+model InventorySupplier {
+  id             String   @id @default(cuid())
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id])
+  name           String
+  contactPhone   String?
+  contactEmail   String?
+  active         Boolean  @default(true)
+  createdAt      DateTime @default(now())
+
+  items InventoryItem[]
+
+  @@index([organizationId])
+}
+
+model InventoryItem {
+  id                    String   @id @default(cuid())
+  organizationId        String
+  organization          Organization @relation(fields: [organizationId], references: [id])
+  code                  String   // auto-generated unique code per-org
+  name                  String
+  unit                  String   // e.g. "mL", "kit", "box"
+  reorderThreshold      Float?
+  preferredSupplierId   String?
+  preferredSupplier     InventorySupplier? @relation(fields: [preferredSupplierId], references: [id])
+  active                Boolean  @default(true)
+  createdAt             DateTime @default(now())
+
+  transactions          InventoryTransaction[]
+  testRequirements      TestInventoryRequirement[]
+
+  @@unique([organizationId, code])
+  @@index([organizationId])
+}
+
+model InventoryTransaction {
+  id             String   @id @default(cuid())
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id])
+  itemId         String
+  item           InventoryItem @relation(fields: [itemId], references: [id])
+  direction      InventoryDirection
+  quantity       Float
+  batchNumber    String?
+  expiryDate     DateTime?
+  reason         String?   // e.g. "Purchase", "Consumption", "Breakage", "Expired write-off"
+  actorUserId    String
+  createdAt      DateTime @default(now())
+
+  @@index([organizationId])
+  @@index([itemId])
+  @@index([organizationId, itemId])
+}
+
+// Data model only — no auto-deduction logic yet (deferred to a later pass)
+model TestInventoryRequirement {
+  id               String  @id @default(cuid())
+  organizationId   String
+  testId           String
+  test             MasterTest @relation(fields: [testId], references: [id])
+  itemId           String
+  item             InventoryItem @relation(fields: [itemId], references: [id])
+  quantityPerTest  Float
+
+  @@index([organizationId])
+  @@index([testId])
+  @@index([itemId])
 }

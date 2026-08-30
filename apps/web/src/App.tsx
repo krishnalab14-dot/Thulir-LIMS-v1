@@ -14,6 +14,9 @@ import { OrderDetail } from './pages/OrderDetail';
 import { Orders } from './pages/Orders';
 import { RegisterWizard } from './pages/RegisterWizard';
 import { Report } from './pages/Report';
+import { InventoryItems } from './pages/InventoryItems';
+import { InventorySuppliers } from './pages/InventorySuppliers';
+import { InventoryStock } from './pages/InventoryStock';
 import { Settings } from './pages/Settings';
 import { ResultEntry } from './pages/ResultEntry';
 import { SampleDetail } from './pages/SampleDetail';
@@ -236,6 +239,30 @@ export function App() {
             element={
               <RequireAuth>
                 <Alerts />
+              </RequireAuth>
+            }
+          />
+          <Route
+            path="/inventory/items"
+            element={
+              <RequireAuth>
+                <InventoryItems />
+              </RequireAuth>
+            }
+          />
+          <Route
+            path="/inventory/suppliers"
+            element={
+              <RequireAuth>
+                <InventorySuppliers />
+              </RequireAuth>
+            }
+          />
+          <Route
+            path="/inventory/stock"
+            element={
+              <RequireAuth>
+                <InventoryStock />
               </RequireAuth>
             }
           />
