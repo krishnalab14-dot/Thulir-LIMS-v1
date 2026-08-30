@@ -22,7 +22,7 @@ describe('Stage 10 real-DB verification — inventory', () => {
   let authHeaders: Record<string, string>;
 
   let supplier1Id: string;
-  let supplier2Id: string;
+  let _supplier2Id: string;
   let item1Id: string;
   let item2Id: string;
 
@@ -51,7 +51,7 @@ describe('Stage 10 real-DB verification — inventory', () => {
 
     const s2 = await http().post('/api/inventory/suppliers').set(authHeaders).send({ name: 'Merck India' });
     expect(s2.status).toBe(201);
-    supplier2Id = s2.body.id;
+    _supplier2Id = s2.body.id;
 
     // Create items
     const i1 = await http().post('/api/inventory/items').set(authHeaders).send({
