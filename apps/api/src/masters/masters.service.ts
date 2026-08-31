@@ -1,4 +1,4 @@
-import { BadRequestException, Injectable } from '@nestjs/common';
+import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { Gender, Prisma, ResultType } from '@prisma/client';
 import { randomBytes } from 'node:crypto';
 import { PrismaService } from '../prisma/prisma.service';
@@ -6,6 +6,7 @@ import { TenantContextService } from '../prisma/tenant-context.service';
 import { CreatePackageDto } from './dto/create-package.dto';
 import { CreateSampleTypeDto } from './dto/create-sample-type.dto';
 import { CreateTestDto } from './dto/create-test.dto';
+import { UpdateTestDto } from './dto/update-test.dto';
 import { specificationsOverlap } from './reference-range.util';
 
 @Injectable()
@@ -218,6 +219,111 @@ export class MastersService {
         }
       }
     }
+  }
+
+  /** PATCH /masters/tests/:id — partial update, replaces specifications if provided. */
+  async updateTest(id: string, dto: UpdateTestDto) {
+    const orgId = this.tenant.requireOrganizationId();
+    const existing = await this.prisma.prisma.masterTest.findFirst({
+      where: { id, organizationId: orgId },
+    });
+    if (!existing) throw new NotFoundException('Test not found');
+
+    if (dto.requiredSampleTypeId !== undefined && dto.requiredSampleTypeId !== null) {
+      const sampleType = await this.prisma.prisma.sampleType.findFirst({ where: { id: dto.requiredSampleTypeId } });
+      if (!sampleType) throw new BadRequestException('requiredSampleTypeId does not exist');
+    }
+
+    const resultType = dto.resultType ?? existing.resultType;
+    if (resultType === ResultType.options && dto.resultOptions !== undefined && dto.resultOptions.length === 0) {
+      throw new BadRequestException('An options-type test must define at least one result option');
+    }
+
+    const resultOptionsAbnormal = ((dto.resultOptionsAbnormal ?? existing.resultOptionsAbnormal) as string[]).filter((o) => o !== '');
+    if (resultOptionsAbnormal.length > 0 && resultType !== ResultType.options) {
+      throw new BadRequestException('resultOptionsAbnormal only applies to options-type tests');
+    }
+    if (resultOptionsAbnormal.length > 0 && dto.resultOptions) {
+      const options = new Set(dto.resultOptions);
+      const unknown = resultOptionsAbnormal.filter((o) => !options.has(o));
+      if (unknown.length > 0) {
+        throw new BadRequestException(`resultOptionsAbnormal contains options not in resultOptions: ${unknown.join(', ')}`);
+      }
+    }
+
+    // Build the scalar update data — only overwrite fields that were explicitly sent.
+    const data: Prisma.MasterTestUpdateInput = {};
+    if (dto.testCode !== undefined) data.testCode = dto.testCode.trim().toUpperCase();
+    if (dto.testName !== undefined) data.testName = dto.testName.trim();
+    if (dto.currentPrice !== undefined) data.currentPrice = new Prisma.Decimal(dto.currentPrice);
+    if (dto.requiredSampleTypeId !== undefined) data.requiredSampleType = dto.requiredSampleTypeId ? { connect: { id: dto.requiredSampleTypeId } } : { disconnect: true };
+    if (dto.requiresDedicatedSample !== undefined) data.requiresDedicatedSample = dto.requiresDedicatedSample;
+    if (dto.unit !== undefined) data.unit = dto.unit?.trim() || null;
+    if (dto.resultType !== undefined) data.resultType = dto.resultType;
+    if (dto.resultOptions !== undefined) {
+      data.resultOptions = resultType === ResultType.options ? dto.resultOptions : [];
+    }
+    if (dto.resultOptionsAbnormal !== undefined) {
+      data.resultOptionsAbnormal = resultType === ResultType.options ? resultOptionsAbnormal : [];
+    }
+    if (dto.defaultRefLow !== undefined) data.defaultRefLow = dto.defaultRefLow;
+    if (dto.defaultRefHigh !== undefined) data.defaultRefHigh = dto.defaultRefHigh;
+    if (dto.criticalLow !== undefined) data.criticalLow = dto.criticalLow;
+    if (dto.criticalHigh !== undefined) data.criticalHigh = dto.criticalHigh;
+
+    // Validate and replace specifications if provided.
+    if (dto.specifications !== undefined) {
+      const specs = dto.specifications.map((s) => ({
+        ageMinYears: s.ageMinYears ?? 0,
+        ageMaxYears: s.ageMaxYears ?? 120,
+        sex: s.sex ?? null,
+        refLow: s.refLow ?? 0,
+        refHigh: s.refHigh ?? 0,
+      }));
+      this.validateSpecifications(specs);
+
+      // Replace: delete existing, create new.
+      await this.prisma.prisma.testSpecification.deleteMany({ where: { testId: id } });
+      if (specs.length > 0) {
+        await this.prisma.prisma.testSpecification.createMany({
+          data: specs.map((s) => ({
+            organizationId: orgId,
+            testId: id,
+            ageMinYears: s.ageMinYears,
+            ageMaxYears: s.ageMaxYears,
+            sex: s.sex,
+            refLow: s.refLow,
+            refHigh: s.refHigh,
+          })),
+        });
+      }
+    }
+
+    return this.prisma.prisma.masterTest.update({
+      where: { id },
+      data,
+      include: {
+        requiredSampleType: { select: { id: true, name: true } },
+        specifications: {
+          orderBy: [{ ageMinYears: 'asc' }, { ageMaxYears: 'asc' }],
+          select: { id: true, ageMinYears: true, ageMaxYears: true, sex: true, refLow: true, refHigh: true },
+        },
+      },
+    });
+  }
+
+  /** Soft-deactivate a test (admin-only). */
+  async deactivateTest(id: string) {
+    const orgId = this.tenant.requireOrganizationId();
+    const existing = await this.prisma.prisma.masterTest.findFirst({
+      where: { id, organizationId: orgId },
+    });
+    if (!existing) throw new NotFoundException('Test not found');
+    return this.prisma.prisma.masterTest.update({
+      where: { id },
+      data: { active: !existing.active },
+      select: { id: true, active: true },
+    });
   }
 
   /** Inline package creation — reusable MasterTestPackage, visible to fresh searches immediately. */

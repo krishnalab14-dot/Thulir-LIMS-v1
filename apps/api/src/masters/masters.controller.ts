@@ -1,9 +1,10 @@
-import { Body, Controller, Get, Post, Query } from '@nestjs/common';
+import { Body, Controller, Delete, Get, Param, Patch, Post, Query } from '@nestjs/common';
 import { Role } from '@prisma/client';
 import { Roles } from '../auth/roles.decorator';
 import { CreatePackageDto } from './dto/create-package.dto';
 import { CreateSampleTypeDto } from './dto/create-sample-type.dto';
 import { CreateTestDto } from './dto/create-test.dto';
+import { UpdateTestDto } from './dto/update-test.dto';
 import { MastersService } from './masters.service';
 
 /**
@@ -30,6 +31,18 @@ export class MastersController {
   @Post('tests')
   createTest(@Body() dto: CreateTestDto) {
     return this.masters.createTest(dto);
+  }
+
+  @Roles(Role.admin)
+  @Patch('tests/:id')
+  updateTest(@Param('id') id: string, @Body() dto: UpdateTestDto) {
+    return this.masters.updateTest(id, dto);
+  }
+
+  @Roles(Role.admin)
+  @Delete('tests/:id')
+  deactivateTest(@Param('id') id: string) {
+    return this.masters.deactivateTest(id);
   }
 
   @Get('packages/search')

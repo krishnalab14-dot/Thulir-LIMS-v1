@@ -14,6 +14,10 @@ interface TestRow {
   unit?: string | null;
   resultOptions?: string[];
   resultOptionsAbnormal?: string[];
+  defaultRefLow?: number | null;
+  defaultRefHigh?: number | null;
+  criticalLow?: number | null;
+  criticalHigh?: number | null;
   requiredSampleType: { id: string; name: string } | null;
   specifications?: { id: string; ageMinYears: number; ageMaxYears: number; sex: string | null; refLow: number; refHigh: number }[];
 }
@@ -200,6 +204,97 @@ export function MastersTests() {
     }));
   }
 
+  const [editingId, setEditingId] = useState<string | null>(null);
+
+  /** Populate form for editing an existing test. */
+  function startEdit(t: TestRow) {
+    setEditingId(t.id);
+    setForm({
+      testCode: t.testCode,
+      testName: t.testName,
+      currentPrice: String(t.currentPrice),
+      requiredSampleTypeId: t.requiredSampleType?.id ?? '',
+      requiresDedicatedSample: t.requiresDedicatedSample,
+      resultType: t.resultType,
+      unit: t.unit ?? '',
+      defaultRefLow: t.defaultRefLow != null ? String(t.defaultRefLow) : '',
+      defaultRefHigh: t.defaultRefHigh != null ? String(t.defaultRefHigh) : '',
+      criticalLow: t.criticalLow != null ? String(t.criticalLow) : '',
+      criticalHigh: t.criticalHigh != null ? String(t.criticalHigh) : '',
+      resultOptions: t.resultOptions ?? [],
+      resultOptionsAbnormal: t.resultOptionsAbnormal ?? [],
+      specifications: (t.specifications ?? []).map((s) => ({
+        ageMinYears: String(s.ageMinYears),
+        ageMaxYears: String(s.ageMaxYears),
+        sex: (s.sex ?? '') as SpecRow['sex'],
+        refLow: String(s.refLow),
+        refHigh: String(s.refHigh),
+      })),
+    });
+    setOptionInput('');
+  }
+
+  /** PATCH an existing test (admin-only). */
+  async function saveEdit(id: string) {
+    setError('');
+    if (!form.testCode.trim() || !form.testName.trim() || form.currentPrice === '') {
+      setError('Code, name and price are required');
+      return;
+    }
+    const price = Number(form.currentPrice);
+    if (Number.isNaN(price) || price < 0) {
+      setError('Price must be a valid amount');
+      return;
+    }
+    const specifications = form.specifications
+      .filter((s) => s.ageMinYears !== '' || s.ageMaxYears !== '' || s.refLow !== '' || s.refHigh !== '' || s.sex !== '')
+      .map((s) => ({
+        ageMinYears: Number(s.ageMinYears),
+        ageMaxYears: Number(s.ageMaxYears),
+        ...(s.sex ? { sex: s.sex } : {}),
+        refLow: Number(s.refLow),
+        refHigh: Number(s.refHigh),
+      }));
+    setSaving(true);
+    try {
+      await api.patch(`/masters/tests/${id}`, {
+        testCode: form.testCode.trim(),
+        testName: form.testName.trim(),
+        currentPrice: price,
+        requiredSampleTypeId: form.requiredSampleTypeId || null,
+        requiresDedicatedSample: form.requiresDedicatedSample,
+        resultType: form.resultType,
+        unit: form.unit.trim() || null,
+        ...(form.resultType === 'options'
+          ? { resultOptions: form.resultOptions, resultOptionsAbnormal: form.resultOptionsAbnormal }
+          : {}),
+        defaultRefLow: form.defaultRefLow !== '' ? Number(form.defaultRefLow) : null,
+        defaultRefHigh: form.defaultRefHigh !== '' ? Number(form.defaultRefHigh) : null,
+        criticalLow: form.criticalLow !== '' ? Number(form.criticalLow) : null,
+        criticalHigh: form.criticalHigh !== '' ? Number(form.criticalHigh) : null,
+        ...(specifications.length > 0 ? { specifications } : { specifications: [] }),
+      });
+      setEditingId(null);
+      resetForm();
+      await load();
+    } catch (e) {
+      setError(e instanceof ApiError ? e.message : 'Could not update the test');
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  /** Toggle active/inactive (soft-delete/restore). */
+  async function toggleActive(id: string) {
+    setError('');
+    try {
+      await api.delete(`/masters/tests/${id}`);
+      await load();
+    } catch (e) {
+      setError(e instanceof ApiError ? e.message : 'Could not toggle test status');
+    }
+  }
+
   return (
     <div className="space-y-4">
       <div>
@@ -212,7 +307,7 @@ export function MastersTests() {
       {error && <p className="rounded-md border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-700">{error}</p>}
 
       <div className="grid gap-4 lg:grid-cols-3">
-        <Card title="Add Test" className="lg:col-span-1">
+        <Card title={editingId ? 'Edit Test' : 'Add Test'} className="lg:col-span-1">
           <div className="space-y-3">
             <Field label="Test Code" required>
               <TextInput value={form.testCode} onChange={(e) => setForm((f) => ({ ...f, testCode: e.target.value }))} placeholder="e.g. CBC" className="font-mono" />
@@ -386,9 +481,16 @@ export function MastersTests() {
               </p>
             )}
 
-            <Button variant="primary" className="w-full" onClick={() => void createTest()} disabled={saving}>
-              {saving ? 'Saving…' : 'Add Test'}
-            </Button>
+            <div className="flex gap-2">
+              <Button variant="primary" className="flex-1" onClick={() => editingId ? void saveEdit(editingId) : void createTest()} disabled={saving}>
+                {saving ? 'Saving…' : editingId ? 'Save Changes' : 'Add Test'}
+              </Button>
+              {editingId && (
+                <Button className="flex-1" onClick={() => { setEditingId(null); resetForm(); }} disabled={saving}>
+                  Cancel
+                </Button>
+              )}
+            </div>
           </div>
         </Card>
 
@@ -406,7 +508,10 @@ export function MastersTests() {
                     <th className="thulir-th">Sample Type</th>
                     <th className="thulir-th">Tube</th>
                     <th className="thulir-th text-right">Price</th>
+                    <th className="thulir-th text-right">Ref Range</th>
+                    <th className="thulir-th text-right">Critical</th>
                     <th className="thulir-th">Status</th>
+                    <th className="thulir-th"></th>
                   </tr>
                 </thead>
                 <tbody>
@@ -437,8 +542,34 @@ export function MastersTests() {
                         )}
                       </td>
                       <td className="thulir-td text-right font-mono text-[13px] font-semibold">{inr(t.currentPrice)}</td>
+                      <td className="thulir-td text-right font-mono text-[12px] text-slate-500">
+                        {t.resultType === 'numeric' && t.defaultRefLow != null && t.defaultRefHigh != null
+                          ? `${t.defaultRefLow}–${t.defaultRefHigh}`
+                          : t.resultType === 'numeric' && (t.defaultRefLow != null || t.defaultRefHigh != null)
+                          ? `${t.defaultRefLow ?? '?'}–${t.defaultRefHigh ?? '?'} `  
+                          : '—'}
+                      </td>
+                      <td className="thulir-td text-right font-mono text-[12px]">
+                        {t.criticalLow != null || t.criticalHigh != null ? (
+                          <span className="text-rose-600">
+                            {t.criticalLow != null ? `<${t.criticalLow}` : ''}
+                            {t.criticalLow != null && t.criticalHigh != null ? ' / ' : ''}
+                            {t.criticalHigh != null ? `>${t.criticalHigh}` : ''}
+                          </span>
+                        ) : (
+                          <span className="text-slate-300">—</span>
+                        )}
+                      </td>
                       <td className="thulir-td">
                         <Badge tone={t.active ? 'green' : 'slate'}>{t.active ? 'active' : 'inactive'}</Badge>
+                      </td>
+                      <td className="thulir-td text-right">
+                        <div className="flex items-center justify-end gap-1">
+                          <button onClick={() => startEdit(t)} className="rounded px-1.5 py-0.5 text-[11px] text-slate-400 transition hover:bg-brand-50 hover:text-brand-700">Edit</button>
+                          <button onClick={() => toggleActive(t.id)} className="rounded px-1.5 py-0.5 text-[11px] text-slate-400 transition hover:bg-rose-50 hover:text-rose-600">
+                            {t.active ? 'Disable' : 'Enable'}
+                          </button>
+                        </div>
                       </td>
                     </tr>
                   ))}
