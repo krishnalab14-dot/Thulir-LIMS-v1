@@ -235,10 +235,25 @@ async function main() {
   // Package items — keyed by @@unique([packageId, testId]).
   // Creates missing items, silently skips existing ones.
   // Does NOT remove items a user may have added through the API.
+  //
+  // Robustness: if the DB already has a test with the same testCode
+  // but a different ID (from an older seed that used a different ID
+  // scheme), resolve the actual DB ID by code. This prevents FK
+  // violations when the seed's hardcoded ID doesn't match what's in
+  // the DB.
+  const dbTests = await prisma.masterTest.findMany({
+    where: { organizationId: ORG_ID },
+    select: { id: true, testCode: true },
+  });
+  const codeToId = new Map<string, string>();
+  for (const t of dbTests) codeToId.set(t.testCode, t.id);
+
   const allItems: { packageId: string; testId: string }[] = [];
   for (const pkg of packages) {
-    for (const testId of pkg.itemTestIds) {
-      allItems.push({ packageId: pkg.id, testId });
+    for (const seedTestId of pkg.itemTestIds) {
+      const seedTest = tests.find((t) => t.id === seedTestId);
+      const actualId = codeToId.get(seedTest?.testCode ?? '') ?? seedTestId;
+      allItems.push({ packageId: pkg.id, testId: actualId });
     }
   }
   await prisma.masterTestPackageItem.createMany({
