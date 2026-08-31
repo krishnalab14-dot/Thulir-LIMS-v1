@@ -237,4 +237,101 @@ describe('Stage 2.5 real-DB verification — Test Master extension', () => {
     const count = await plain.testSpecification.count({ where: { testId: tNumId } });
     expect(count).toBe(2);
   });
+
+  // ──────────────────────────────────────────────────────────────────────
+  // PATCH /masters/tests/:id — edit persists, order snapshots updated values
+  // ──────────────────────────────────────────────────────────────────────
+
+  it('PATCH /masters/tests/:id — edit unit, range, and name; confirm persistence and snapshot reflects updated values', async () => {
+    // 1. PATCH the test we created in beforeAll: change unit, range, name
+    const patchRes = await http()
+      .patch(`/api/masters/tests/${tNumId}`)
+      .set(authHeaders)
+      .send({
+        unit: 'kU/L',
+        defaultRefLow: 15,
+        defaultRefHigh: 25,
+        testName: 'TM Numeric Marker (Updated)',
+      });
+    expect(patchRes.status).toBe(200);
+    expect(patchRes.body.unit).toBe('kU/L');
+    expect(patchRes.body.defaultRefLow).toBe(15);
+    expect(patchRes.body.defaultRefHigh).toBe(25);
+    expect(patchRes.body.testName).toBe('TM Numeric Marker (Updated)');
+
+    // 2. Confirm via GET
+    const listRes = await http().get('/api/masters/tests').set(authHeaders);
+    expect(listRes.status).toBe(200);
+    const updated = (listRes.body as { id: string; unit: string | null; defaultRefLow: number; defaultRefHigh: number }[]).find((t) => t.id === tNumId);
+    expect(updated).toBeDefined();
+    expect(updated!.unit).toBe('kU/L');
+    expect(updated!.defaultRefLow).toBe(15);
+    expect(updated!.defaultRefHigh).toBe(25);
+
+    // 3. Order the test for a patient who matches no spec → should snapshot the NEW default range (15-25)
+    const orderRes = await placeOrder(tNumId, '9550000010', 'male', 70);
+    expect(orderRes.status).toBe(201);
+    const ot = await orderTestOf(orderRes.body.id);
+    expect(ot.snapshottedRefLow).toBe(15);
+    expect(ot.snapshottedRefHigh).toBe(25);
+    expect(ot.snapshottedUnit).toBe('kU/L');
+    expect(ot.testNameSnapshot).toBe('TM Numeric Marker (Updated)');
+
+    // 4. Restore original values for the rest of the suite
+    await http()
+      .patch(`/api/masters/tests/${tNumId}`)
+      .set(authHeaders)
+      .send({
+        unit: null,
+        defaultRefLow: 10,
+        defaultRefHigh: 20,
+        testName: 'TM Numeric Marker',
+      });
+  });
+
+  it('PATCH returns 404 for nonexistent test', async () => {
+    const res = await http()
+      .patch('/api/masters/tests/nonexistent_id')
+      .set(authHeaders)
+      .send({ testName: 'Ghost' });
+    expect(res.status).toBe(404);
+  });
+
+  // ──────────────────────────────────────────────────────────────────────
+  // DELETE (soft-toggle) /masters/tests/:id
+  // ──────────────────────────────────────────────────────────────────────
+
+  it('DELETE /masters/tests/:id — toggle active/inactive; inactive test excluded from search and cannot be ordered', async () => {
+    // 1. Deactivate
+    const delRes = await http().delete(`/api/masters/tests/${tTxtId}`).set(authHeaders);
+    expect(delRes.status).toBe(200);
+    expect(delRes.body.active).toBe(false);
+
+    // 2. Confirm inactive in the test list (listTests returns active only)
+    const listRes = await http().get('/api/masters/tests').set(authHeaders);
+    expect(listRes.status).toBe(200);
+    const found = (listRes.body as { id: string; active: boolean }[]).find((t) => t.id === tTxtId);
+    expect(found).toBeUndefined(); // filtered out
+
+    // 3. Confirm inactive test excluded from search
+    const searchRes = await http().get('/api/masters/tests/search?q=TM-TXT').set(authHeaders);
+    expect(searchRes.status).toBe(200);
+    const searchFound = (searchRes.body as { id: string; testCode: string }[]).find((t) => t.testCode === 'TM-TXT');
+    expect(searchFound).toBeUndefined();
+
+    // 4. Re-enable
+    const reEnableRes = await http().delete(`/api/masters/tests/${tTxtId}`).set(authHeaders);
+    expect(reEnableRes.status).toBe(200);
+    expect(reEnableRes.body.active).toBe(true);
+
+    // 5. Back in the list
+    const listAfter = await http().get('/api/masters/tests').set(authHeaders);
+    const foundAfter = (listAfter.body as { id: string }[]).find((t) => t.id === tTxtId);
+    expect(foundAfter).toBeDefined();
+  });
+
+  it('DELETE returns 404 for nonexistent test', async () => {
+    const res = await http().delete('/api/masters/tests/nonexistent_id').set(authHeaders);
+    expect(res.status).toBe(404);
+  });
 });

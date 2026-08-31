@@ -247,6 +247,7 @@ model MasterTest {
   orderTests        OrderTest[]
   testRequirements  TestInventoryRequirement[]
 
+  @@unique([organizationId, testCode])
   @@index([organizationId])
 }
 
@@ -268,6 +269,7 @@ model TestSpecification {
   refLow        Float
   refHigh       Float
 
+  @@unique([organizationId, testId, ageMinYears, ageMaxYears, sex])
   @@index([organizationId])
   @@index([testId])
 }
@@ -282,6 +284,7 @@ model MasterTestPackage {
   items          MasterTestPackageItem[]
   active         Boolean                  @default(true)
 
+  @@unique([organizationId, packageCode])
   @@index([organizationId])
 }
 
@@ -292,6 +295,7 @@ model MasterTestPackageItem {
   testId    String
   test      MasterTest         @relation(fields: [testId], references: [id])
 
+  @@unique([packageId, testId])
   @@index([packageId])
 }
 

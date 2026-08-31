@@ -276,13 +276,12 @@ async function main() {
     throw new Error('Migrations did not create the schema — the database is unusable.');
   }
 
-  const orgCount = (await query(url, 'SELECT COUNT(*)::int AS n FROM "Organization"')).rows[0].n;
-  if (orgCount === 0) {
-    log('Empty database — seeding the demo organization + catalog…');
-    run('npx --no-install tsx prisma/seed.ts');
-  } else {
-    log(`Database already has data (${orgCount} organization(s)) — skipping seed.`);
-  }
+  // Always run the idempotent seed — it uses upsert / createMany(skipDuplicates)
+  // to insert missing rows without touching existing ones (including manual
+  // edits made through the Masters UI). New test panels added to the seed
+  // in future passes are automatically picked up on every boot.
+  log('Running idempotent seed (upsert pattern — existing data untouched)…');
+  run('npx --no-install tsx prisma/seed.ts');
 
   const apiPort = process.env.API_PORT ?? '3000';
   log(`Starting NestJS watcher on port ${apiPort} (API_PORT), DB: ${url.split('@').pop()}`);
